@@ -22,10 +22,10 @@ const beaming: Draw = (c, m) => {
   const cx = spot(c.W, 0.5)
   const T = m.t % 6400
   const up = ease(seg(T, 1400, 3000)) - ease(seg(T, 4200, 5600))
-  const on = T > 700 && T < 5800
+  const shown = T > 700 && T < 5800
   const sway = Math.round(Math.sin(m.t / 500) * 1.4)
   for (let k = 0; k < c.W / 7; k++) if ((Math.floor(m.t / 400) + k) % 5) put(c, rnd(k, 1) * c.W, rnd(k, 2) * 8, 0x8a91b0)
-  if (on) {
+  if (shown) {
     for (let y = 4; y < GROUND; y++) {
       const half = 2 + Math.floor((y - 4) * 0.5)
       for (let x = -half; x <= half; x++) {

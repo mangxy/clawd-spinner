@@ -6,15 +6,13 @@ import { encode, frame } from './frame'
 const FRAME_MS = 83  // ~12 frames a second
 const EDGE = 4  // columns kept clear at the right edge
 
-type $ = EngineInterface
-
 /** The spinner row while a turn runs. Module state: a reload starts the act over, which is fine. */
 const spin = {
   turnAt: 0, word: '', working: false, last: '', blit: true,
   mount: null as { requestId: string; columns: number } | null,
 }
 
-async function paint($: $) {
+async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return
   const now = await $.clock.now()
@@ -35,7 +33,9 @@ async function paint($: $) {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    if (e.isInteractive) $.clock.every(FRAME_MS, () => void paint($))
+    if (!e.isInteractive) return next(e)
+    const tick = () => paint($)
+    $.clock.every(FRAME_MS, tick)
     return next(e)
   })
 

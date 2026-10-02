@@ -496,8 +496,8 @@ const shimmying: Draw = (c, m) => {
   }
   for (let i = 4; i < 10; i++) put(c, cx + i + s, y + 2, 0xf4f4f4)  // pearls
   for (let k = 1; k <= 3; k++) {
-    const on = (beat(m.t, 90) + k) % 3
-    if (on) { put(c, cx - 3 - k * 2, 11, mix(0xffd54f, 0x1a1c24, k / 4)); put(c, cx + 16 + k * 2, 11, mix(0xffd54f, 0x1a1c24, k / 4)) }
+    const lit = (beat(m.t, 90) + k) % 3
+    if (lit) { put(c, cx - 3 - k * 2, 11, mix(0xffd54f, 0x1a1c24, k / 4)); put(c, cx + 16 + k * 2, 11, mix(0xffd54f, 0x1a1c24, k / 4)) }
   }
   ground(c, 0x4a2a3a)
 }

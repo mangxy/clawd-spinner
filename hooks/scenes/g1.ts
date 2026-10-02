@@ -657,9 +657,9 @@ const synthesizing: Draw = (c, m, g) => {
   const kx = spot(c.W, 0.55) - 10
   rect(c, kx - 1, 10, 23, 5, 0x24262e)
   const tune = [0, 2, 4, 2, 5, 4, 2, 1]
-  const on = tune[Math.floor(m.t / 280) % 8]!
+  const lit = tune[Math.floor(m.t / 280) % 8]!
   for (let i = 0; i < 7; i++) {
-    rect(c, kx + i * 3, 11, 2, 4, i === on ? 0x4fd9c8 : 0xe8e8e8)
+    rect(c, kx + i * 3, 11, 2, 4, i === lit ? 0x4fd9c8 : 0xe8e8e8)
     if ([0, 1, 3, 4, 5].includes(i)) rect(c, kx + i * 3 + 2, 11, 1, 2, 0x0e0e12)
   }
   rect(c, kx - 1, 1, 23, 8, 0x14202a); rect(c, kx, 2, 21, 6, 0x0b1a14)

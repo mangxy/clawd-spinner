@@ -26,6 +26,16 @@ Or from a clone: `claude --plugin-dir ./clawd-spinner`.
 
 Terminal only. Needs a window at least 54 columns wide; narrower, the stock spinner shows.
 
+## What the hooks do
+
+`hooks/register.tsx` hooks four events and only reads them; it never changes what they carry:
+
+- `session.start`: in an interactive session, starts a timer that repaints the animation about 12 times a second.
+- `prompt.submit`: notes when the turn began, so the scene's clock starts at 0. The prompt passes through untouched.
+- `turn.complete`: stops the animation when the main turn ends.
+- `ui.render` on the `Spinner` component: draws Clawd above the spinner line. Below 54 columns, or outside
+  the terminal, it hands the spinner back to Claude Code unchanged.
+
 ## Privacy: what data it sends
 
 None. The mod reads only the spinner word and the turn's elapsed time that Claude Code hands it,
