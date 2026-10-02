@@ -39,9 +39,9 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('prompt.submit', async ($, e, next) => {
-    spin.turnAt = await $.clock.now()
-    spin.working = true
+  // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.
+  on('turn.start', async ($, e, next) => {
+    if (!spin.working) [spin.working, spin.turnAt] = [true, await $.clock.now()]
     return next(e)
   })
 
