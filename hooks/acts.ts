@@ -10,8 +10,8 @@ export type Moment = {
 
 export const ROWS = 8
 export const PH = ROWS * 2
-const DEF = 0x01000000  // the terminal's own colour: transparent here
-const GROUND = PH - 1
+export const DEF = 0x01000000  // the terminal's own colour: transparent here
+export const GROUND = PH - 1
 
 // ------------------------------------------------------------------ which act
 
@@ -36,22 +36,21 @@ export function actFor(word: string): Act {
 
 // ------------------------------------------------------------------ pixels
 
-type Canvas = { W: number; px: Uint32Array }
-type Cell = [number, number, number]
+export type Canvas = { W: number; px: Uint32Array }
 
-const canvas = (W: number): Canvas => ({ W, px: new Uint32Array(W * PH).fill(DEF) })
+export const canvas = (W: number): Canvas => ({ W, px: new Uint32Array(W * PH).fill(DEF) })
 
-function put(c: Canvas, x: number, y: number, colour: number) {
+export function put(c: Canvas, x: number, y: number, colour: number) {
   x = Math.round(x)
   y = Math.round(y)
   if (x >= 0 && x < c.W && y >= 0 && y < PH) c.px[y * c.W + x] = colour
 }
 
-function rect(c: Canvas, x: number, y: number, w: number, h: number, colour: number) {
+export function rect(c: Canvas, x: number, y: number, w: number, h: number, colour: number) {
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(c, x + i, y + j, colour)
 }
 
-function sprite(c: Canvas, art: string[], pal: Record<string, number>, x: number, y: number, flip = false) {
+export function sprite(c: Canvas, art: string[], pal: Record<string, number>, x: number, y: number, flip = false) {
   const w = Math.max(...art.map(r => r.length))
   art.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && pal[ch] !== undefined && put(c, x + (flip ? w - 1 - i : i), y + j, pal[ch]!)))
 }
@@ -63,18 +62,18 @@ export function rnd(a: number, b = 0): number {
   return ((h ^ (h >>> 13)) >>> 0) / 4294967296
 }
 
-const mix = (a: number, b: number, k: number) => {
+export const mix = (a: number, b: number, k: number) => {
   k = Math.min(1, Math.max(0, k))
   const ch = (s: number) => Math.round(((a >> s) & 255) * (1 - k) + ((b >> s) & 255) * k) << s
   return ch(16) | ch(8) | ch(0)
 }
 
-const wave = (t: number, period: number, phase = 0) => (Math.sin((t / period) * Math.PI * 2 + phase) + 1) / 2
+export const wave = (t: number, period: number, phase = 0) => (Math.sin((t / period) * Math.PI * 2 + phase) + 1) / 2
 
 // ------------------------------------------------------------------ Clawd
 
-const CLAWD = 0xd97757
-const SPARKS = [0xff4b3e, 0xffd54f, 0xdfe7ff, 0xff9e3d]
+export const CLAWD = 0xd97757
+export const SPARKS = [0xff4b3e, 0xffd54f, 0xdfe7ff, 0xff9e3d]
 const CLAWD_ART = [
   '..CCCCCCCCCC..',
   '..CCECCCCECC..',
@@ -83,14 +82,14 @@ const CLAWD_ART = [
   '..CCCCCCCCCC..',
 ]
 const LEGS = ['..C.C....C.C..', '...C.C..C.C...']
-const CLAWD_TOP = GROUND - CLAWD_ART.length - 1
-const START = 3
+export const CLAWD_TOP = GROUND - CLAWD_ART.length - 1
+export const START = 3
 
-type Pose = 'stand' | 'cast' | 'walk' | 'pan' | 'hammer' | 'crank' | 'dance' | 'carry' | 'water' | 'umbrella' | 'float'
-type Hands = { hand: [number, number]; tip: [number, number] | null }
+export type Pose = 'stand' | 'cast' | 'walk' | 'pan' | 'hammer' | 'crank' | 'dance' | 'carry' | 'water' | 'umbrella' | 'float'
+export type Hands = { hand: [number, number]; tip: [number, number] | null }
 
 /** Clawd (no hat here) at x, facing right (1) or left (-1), lifted `lift` pixels. */
-function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -1 = 1, lift = 0): Hands {
+export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -1 = 1, lift = 0): Hands {
   const f = Math.floor(t / 83)
   const blink = f % 47 < 2
   const ox = Math.round(x)
@@ -126,13 +125,13 @@ function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -1 = 1, 
 
 // ------------------------------------------------------------------ walking routes
 
-const WALK = 0.016  // pixels per ms
+export const WALK = 0.016  // pixels per ms
 
-type Stop = { x: number; stay: number; pose: Pose }
-type Where = { x: number; facing: 1 | -1; pose: Pose; stop: number; still: boolean; stayed: number }
+export type Stop = { x: number; stay: number; pose: Pose }
+export type Where = { x: number; facing: 1 | -1; pose: Pose; stop: number; still: boolean; stayed: number }
 
 /** Clawd's place on a looping route: stands at each stop for `stay` ms, walks between them. */
-function along(stops: Stop[], ms: number, walkPose: Pose = 'walk'): Where {
+export function along(stops: Stop[], ms: number, walkPose: Pose = 'walk'): Where {
   const legs = stops.map((s, i) => {
     const next = stops[(i + 1) % stops.length]!
     return { s, next, walk: Math.abs(next.x - s.x) / WALK }
@@ -148,16 +147,16 @@ function along(stops: Stop[], ms: number, walkPose: Pose = 'walk'): Where {
   return { x: stops[0]!.x, facing: 1, pose: stops[0]!.pose, stop: 0, still: true, stayed: 0 }
 }
 
-const spot = (W: number, k: number) => Math.round(Math.max(24, Math.min(W - 24, W * k)))
+export const spot = (W: number, k: number) => Math.round(Math.max(24, Math.min(W - 24, W * k)))
 
-function ground(c: Canvas, colour = 0x2a2d36) {
+export function ground(c: Canvas, colour = 0x2a2d36) {
   for (let x = 0; x < c.W; x++) put(c, x, GROUND, colour)
 }
 
 // ------------------------------------------------------------------ the acts
 
-type Glyph = { x: number; row: number; ch: string; fg: number }
-type Draw = (c: Canvas, m: Moment, glyphs: Glyph[]) => void
+export type Glyph = { x: number; row: number; ch: string; fg: number }
+export type Draw = (c: Canvas, m: Moment, glyphs: Glyph[]) => void
 
 const cook: Draw = (c, m) => {
   const fire = spot(c.W, 0.35)
@@ -251,7 +250,7 @@ const build: Draw = (c, m) => {
   ground(c)
 }
 
-function gear(c: Canvas, cx: number, cy: number, r: number, angle: number, colour: number) {
+export function gear(c: Canvas, cx: number, cy: number, r: number, angle: number, colour: number) {
   for (let a = 0; a < 24; a++) put(c, cx + Math.cos((a / 24) * Math.PI * 2) * r, cy + Math.sin((a / 24) * Math.PI * 2) * r, colour)
   for (let k = 0; k < 6; k++) {
     const a = angle + (k / 6) * Math.PI * 2
@@ -400,37 +399,7 @@ const magic: Draw = (c, m) => {
   ground(c)
 }
 
-const ACTS: Record<Act, Draw> = { cook, think, dance, build, compute, stroll, herd, weather, garden, space, magic }
-
-// ------------------------------------------------------------------ cells
-
-/** The frame's cells, packed for a Raster: columns * ROWS triplets of [codePoint, fg, bg]. */
-export function frame(m: Moment, columns: number): Uint32Array {
-  const c = canvas(columns)
-  const glyphs: Glyph[] = []
-  ACTS[actFor(m.word)](c, m, glyphs)
-  const cells: Cell[] = []
-  for (let r = 0; r < ROWS; r++) {
-    for (let x = 0; x < columns; x++) {
-      const top = c.px[2 * r * columns + x]!
-      const bot = c.px[(2 * r + 1) * columns + x]!
-      if (top === DEF && bot === DEF) cells.push([0x20, DEF, DEF])
-      else if (top === bot) cells.push([0x2588, top, DEF])
-      else if (top === DEF) cells.push([0x2584, bot, DEF])
-      else cells.push([0x2580, top, bot])
-    }
-  }
-  for (const g of glyphs) {
-    const i = g.row * columns + g.x
-    if (g.x >= 0 && g.x < columns && g.row >= 0 && g.row < ROWS && cells[i]![0] === 0x20) cells[i] = [g.ch.codePointAt(0)!, g.fg, DEF]
-  }
-  const out = new Uint32Array(cells.length * 3)
-  cells.forEach(([cp, fg, bg], i) => out.set([cp, fg, bg], i * 3))
-  return out
-}
-
-/** Base64 of the cells, as RasterProps.cells wants them. */
-export const encode = (cells: Uint32Array): string => new Uint8Array(cells.buffer).toBase64()
+export const ACTS: Record<Act, Draw> = { cook, think, dance, build, compute, stroll, herd, weather, garden, space, magic }
 
 /** "12s", "1m 4s": the turn's time, as the spinner shows it. */
 export const elapsed = (ms: number) => {
