@@ -1,6 +1,6 @@
 {
   "name": "clawd-spinner",
-  "version": "0.1.0",
-  "description": "Clawd acts out the spinner's word above it while Claude works: cooking for Sautéing, dancing for Vibing, pacing for Pondering, 11 acts across all 179 words.",
+  "version": "0.2.0",
+  "description": "Clawd acts out the spinner's word above it while Claude works: cooking for Sautéing, dancing for Vibing, pacing for Pondering, a scene of its own for every one of the 189 spinner words.",
   "author": { "name": "Sai Rudra" }
 }

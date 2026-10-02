@@ -2,14 +2,15 @@
 
 A Claude Code mod: while Claude works, Clawd acts out the spinner word above the spinner line.
 
-- *Sautéing* → cooking · *Pondering* → pacing and thinking · *Moonwalking* → dancing (backwards)
-- 11 acts: cook, think, dance, build, compute, herd, stroll, weather, garden, space, magic
-- Covers all 179 built-in spinner words. Anything unmatched gets the magic act.
+- Every one of Claude Code's 189 spinner words has its own scene: *Baking* slides bread into an oven,
+  *Beaming* gets pulled up by a UFO, *Gitifying* draws a commit graph, *Honking* honks.
+- A word a later Claude Code adds falls back to one of 11 general acts (cook, think, dance, build, …).
 
-## How a word picks an act
+## How a word picks its scene
 
-Claude Code picks a random spinner word each turn. `actFor()` in `hooks/acts.ts` matches it against
-stem lists (`saut|whisk|brew…` → cook, `ponder|mull|ruminat…` → think, …). The first match wins.
+Claude Code picks a random spinner word each turn. `hooks/frame.ts` looks the word up in
+`hooks/scenes/` (one scene per word); an unknown word goes to `actFor()` in `hooks/acts.ts`, which
+matches stem lists (`saut|whisk|brew…` → cook, …).
 
 ## Install
 
@@ -27,6 +28,7 @@ Terminal only. Needs a window at least 54 columns wide; narrower, the stock spin
 ```
 claude plugin validate .
 claude plugin test .
+npx tsx scripts/preview.ts preview.png Baking Beaming   # PNG contact sheet
 ```
 
 `/plugin-types .claude-plugin/types` regenerates the editor typings (git-ignored).
