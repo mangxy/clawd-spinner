@@ -646,11 +646,15 @@ const unraveling: Draw = (c, m) => {
   const { hand } = clawd(c, m.t, forward && p < 5000 ? 'carry' : 'float', fx, forward ? 1 : -1)
   const ex = hand[0], endY = hand[1]
   const x0 = sx + w
-  for (let x = x0; x <= ex; x++) put(c, x, 12 + Math.round(Math.sin((x - x0) / 3 + m.t / 220) * 1) + (x > ex - 3 ? 0 : 0), 0xd94f6a)
+  for (let x = x0; x <= ex; x++) {  // the thread runs behind Clawd: only on empty pixels, never across his face
+    const y = 12 + Math.round(Math.sin((x - x0) / 3 + m.t / 220) * 1)
+    if (c.px[y * c.W + Math.round(x)] === DEF) put(c, x, y, 0xd94f6a)
+  }
   put(c, ex, endY, 0xd94f6a)
   const ballR = 2
-  disc(c, ex + 3, 13, ballR, 0xd94f6a)  // the ball it winds onto
-  line(c, ex + 1, 13, ex + 5, 12, 0x8a2a42)
+  const side = forward ? 1 : -1  // the ball sits beyond his hand, which is on his left when he walks back
+  disc(c, ex + 3 * side, 13, ballR, 0xd94f6a)  // the ball it winds onto
+  line(c, ex + side, 13, ex + 5 * side, 12, 0x8a2a42)
   ground(c)
 }
 

@@ -286,7 +286,7 @@ const garnishing: Draw = (c, m) => {
   const x = tx - 20
   rect(c, x + 2, 13, 10, 1, 0x7a4a24); put(c, x + 2, 14, 0x7a4a24); put(c, x + 11, 14, 0x7a4a24)
   const { hand } = clawd(c, m.t, 'umbrella', x, 1, 2)
-  rect(c, x + 4, CLAWD_TOP - 1, 6, 3, WHITE)
+  rect(c, x + 4, CLAWD_TOP - 5, 6, 3, WHITE)  // chef's hat: on top of the head, which Clawd lifts to CLAWD_TOP - 2
   if (p > 0.08 && p < 0.42) for (let k = 0; k < 4; k++) {
     const life = ((m.t / 350) + k * 0.25) % 1
     put(c, hand[0] + 1 + life * 9, hand[1] + life * life * 5, k % 2 ? 0x4f9a3a : 0x6ab84f)
