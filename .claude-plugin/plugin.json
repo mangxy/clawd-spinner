@@ -8,5 +8,6 @@
   "displayName": "Clawd Spinner",
   "homepage": "https://github.com/saiharsha03/clawd-spinner",
   "repository": "https://github.com/saiharsha03/clawd-spinner",
-  "license": "MIT"
+  "license": "MIT",
+  "icon": "./icon.png"
 }

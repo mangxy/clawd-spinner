@@ -26,6 +26,12 @@ Or from a clone: `claude --plugin-dir ./clawd-spinner`.
 
 Terminal only. Needs a window at least 54 columns wide; narrower, the stock spinner shows.
 
+## Privacy: what data it sends
+
+None. The mod reads only the spinner word and the turn's elapsed time that Claude Code hands it,
+and draws in the terminal. It makes no network requests, no model calls, reads and writes no files,
+and stores nothing. There is no remote server, so there is no privacy policy to link.
+
 ## Develop
 
 ```
