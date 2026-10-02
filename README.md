@@ -2,6 +2,9 @@
 
 A Claude Code mod: while Claude works, Clawd acts out the spinner word above the spinner line.
 
+**It won't use any of your usage.** Every scene is drawn locally from code: no model calls, no tokens,
+no network. Your usage goes to the things that matter.
+
 - Every one of Claude Code's 189 spinner words has its own scene: *Baking* slides bread into an oven,
   *Beaming* gets pulled up by a UFO, *Gitifying* draws a commit graph, *Honking* honks.
 - A word a later Claude Code adds falls back to one of 11 general acts (cook, think, dance, build, …).
