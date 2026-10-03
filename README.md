@@ -30,13 +30,19 @@ twenty for unseen words; `bubble()` in `hooks/frame.ts` draws it where `clawd()`
 ## Install
 
 ```
-/plugin marketplace add saiharsha03/clawd-spinner
+/plugin marketplace add https://github.com/saiharsha03/clawd-spinner.git
 /plugin install clawd-spinner@clawd-spinner
 ```
 
-Or from a clone: `claude --plugin-dir ./clawd-spinner`.
+Then `/reload-plugins` (or restart Claude Code). The HTTPS link works with or without SSH keys for
+GitHub; the short form `saiharsha03/clawd-spinner` may try SSH first. Or from a clone:
+`claude --plugin-dir ./clawd-spinner`.
 
-Terminal only. Needs a window at least 54 columns wide; narrower, the stock spinner shows.
+To update: `/plugin marketplace update clawd-spinner`, then `/plugin update clawd-spinner@clawd-spinner`.
+
+Needs Claude Code 2.1.287 or newer (mods are on by default from there). Terminal only, in a window at
+least 54 columns wide; narrower, the stock spinner shows. On Windows, a "Filename too long" error
+while adding the marketplace goes away after `git config --global core.longpaths true`.
 
 ## What the hooks do
 
