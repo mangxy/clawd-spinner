@@ -2,21 +2,36 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import * as A from './acts'
 import { encode, frame } from './frame'
+import { lineFor } from './rocky'
 
 const FRAME_MS = 83  // ~12 frames a second
 const EDGE = 4  // columns kept clear at the right edge
+const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
+const BUMP_MS = 3_000  // how long he answers a press of the ✊ button
+const BUMPS = ['Fist my bump!', 'Bump bump bump!', 'Friend touch! Happy happy!', 'Amaze! Again, question?']
 
 /** The spinner row while a turn runs. Module state: a reload starts the act over, which is fine. */
 const spin = {
-  turnAt: 0, word: '', working: false, last: '', blit: true,
+  turnAt: 0, word: '', working: false, last: '', blit: true, bumpAt: -Infinity, bumps: 0,
   mount: null as { requestId: string; columns: number } | null,
+}
+
+/**
+ * The moment to draw: the scene's time and what Clawd says in his bubble. Each word has ten lines,
+ * starting at a different one each turn and moving on every 10s; a press of ✊ answers for 3s.
+ */
+function moment(now: number): A.Moment {
+  const t = now - spin.turnAt
+  if (now - spin.bumpAt < BUMP_MS) return { word: spin.word, t, line: BUMPS[spin.bumps % BUMPS.length], lineT: now - spin.bumpAt }
+  const n = Math.floor(spin.turnAt / 1000) + Math.floor(t / LINE_MS)
+  return { word: spin.word, t, line: lineFor(spin.word, n), lineT: t % LINE_MS }
 }
 
 async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return
   const now = await $.clock.now()
-  const cells = encode(frame({ word: spin.word, t: now - spin.turnAt }, m.columns))
+  const cells = encode(frame(moment(now), m.columns))
   if (cells === spin.last) return
   spin.last = cells
   if (!spin.blit) {
@@ -51,25 +66,27 @@ export const register: Register = on => {
     return done
   })
 
-  // Clawd acts out the word, and under him the spinner's line: the word and the turn's time.
+  // Clawd acts out the word with a line in his bubble; under him the spinner's line (the word and
+  // the turn's time) and a ✊ to bump his fist.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (e.surface !== 'terminal' || columns < 50) {
       spin.mount = null
       return next(e)
     }
-    const { Raster, Box, Text } = $.ui.resolve(e)
+    const { Raster, Box, Text, Button } = $.ui.resolve(e)
     const now = await $.clock.now()
     if (!spin.working) [spin.working, spin.turnAt] = [true, now]  // a reload mid-turn
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.word = e.props.word
     spin.mount = { requestId: e.requestId, columns }
-    const cells = encode(frame({ word: spin.word, t: now - spin.turnAt }, columns))
+    const cells = encode(frame(moment(now), columns))
     spin.last = cells
     return (
       <Box flexDirection="column">
         <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
         <Text><Text color="#d97757">✻ {e.props.message ?? e.props.word}{e.props.suffix}</Text><Text dimColor> ({A.elapsed(now - spin.turnAt)})</Text></Text>
+        <Button key="bump" label="✊ bump Clawd" onPress={async () => { spin.bumpAt = await $.clock.now(); spin.bumps += 1; await paint($) }} />
       </Box>
     )
   })

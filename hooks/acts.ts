@@ -6,6 +6,8 @@ export type Act = 'cook' | 'think' | 'dance' | 'build' | 'compute' | 'stroll' | 
 export type Moment = {
   word: string  // the spinner's word, as drawn
   t: number  // ms since the turn began
+  line?: string  // what Clawd says, drawn in a bubble beside his head
+  lineT?: number  // ms since that line began: it types itself out
 }
 
 export const ROWS = 8
@@ -36,7 +38,7 @@ export function actFor(word: string): Act {
 
 // ------------------------------------------------------------------ pixels
 
-export type Canvas = { W: number; px: Uint32Array }
+export type Canvas = { W: number; px: Uint32Array; clawdAt?: { x: number; y: number } }  // clawdAt: where clawd() last drew him
 
 export const canvas = (W: number): Canvas => ({ W, px: new Uint32Array(W * PH).fill(DEF) })
 
@@ -96,6 +98,7 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const hop = pose === 'dance' ? -(Math.floor(t / 300) % 2) : 0
   const breathe = (pose === 'stand' || pose === 'cast') && Math.floor(t / 700) % 2 ? 1 : 0
   const y = CLAWD_TOP + hop + breathe - lift
+  c.clawdAt = { x: ox, y }
   const at = (i: number) => (facing > 0 ? ox + i : ox + 13 - i)
   const P = (i: number, yy: number, colour: number) => put(c, at(i), yy, colour)
   const shade = mix(CLAWD, 0x000000, 0.18)
