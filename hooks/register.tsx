@@ -11,6 +11,7 @@ const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10
 /** The spinner row while a turn runs. Module state: a reload starts the act over, which is fine. */
 const spin = {
   turnAt: 0, word: '', working: false, last: '', blit: true,
+  talk: true,  // his speech bubble; /clawd-talk turns it off and on, remembered across sessions
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -21,7 +22,7 @@ const spin = {
 function moment(now: number): A.Moment {
   const t = now - spin.turnAt
   const n = Math.floor(spin.turnAt / 1000) + Math.floor(t / LINE_MS)
-  return { word: spin.word, t, line: lineFor(spin.word, n), lineT: t % LINE_MS }
+  return { word: spin.word, t, line: spin.talk ? lineFor(spin.word, n) : undefined, lineT: t % LINE_MS }
 }
 
 async function paint($: EngineInterface) {
@@ -46,9 +47,28 @@ async function paint($: EngineInterface) {
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if (!e.isInteractive) return next(e)
+    try {
+      spin.talk = (await $.store.get('talk')) !== false
+    } catch {
+      spin.talk = true
+    }
+    await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
     const tick = () => paint($)
     $.clock.every(FRAME_MS, tick)
     return next(e)
+  })
+
+  // /clawd-talk flips his speech bubble; /clawd-talk on or /clawd-talk off sets it.
+  on('command.run', { command: 'clawd-talk' }, async ($, e) => {
+    const arg = String((e as any).args ?? '').trim().toLowerCase()
+    spin.talk = arg === 'on' ? true : arg === 'off' ? false : !spin.talk
+    try {
+      await $.store.set('talk', spin.talk)
+    } catch {
+      // kept for this session only
+    }
+    spin.last = ''
+    return { text: spin.talk ? 'Clawd talks again. Hello hello!' : 'Clawd is quiet now. /clawd-talk brings his voice back.' }
   })
 
   // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.

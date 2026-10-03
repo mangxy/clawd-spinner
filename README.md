@@ -15,6 +15,8 @@ no network. Your usage goes to the things that matter.
   "Oven very hot. Clawd wait." *Gitifying*: "Merge conflict, question? Ugh." He moves on to the next
   line every 10 seconds, starting somewhere different each turn. A word he has never seen gets
   twenty lines built around it ("Big word. Small Clawd. Defenestrating!").
+- Rather have him quiet? `/clawd-talk` turns his speech bubble off (and on again); `/clawd-talk off`
+  or `/clawd-talk on` sets it. The choice is remembered across sessions.
 
 ## How a word picks its scene
 
@@ -38,9 +40,11 @@ Terminal only. Needs a window at least 54 columns wide; narrower, the stock spin
 
 ## What the hooks do
 
-`hooks/register.tsx` hooks four events and only reads them; it never changes what they carry:
+`hooks/register.tsx` hooks five events and only reads them; it never changes what they carry:
 
-- `session.start`: in an interactive session, starts a timer that repaints the animation about 12 times a second.
+- `session.start`: in an interactive session, reads whether his speech is on, registers `/clawd-talk`,
+  and starts a timer that repaints the animation about 12 times a second.
+- `command.run` for `/clawd-talk`: turns his speech bubble off or on and remembers the choice.
 - `turn.start`: notes when the turn began, so the scene's clock starts at 0 (a subagent's turn doesn't restart it).
 - `turn.complete`: stops the animation when the main turn ends.
 - `ui.render` on the `Spinner` component: draws Clawd, and his speech bubble, above the spinner line. Below 54 columns, or outside
@@ -50,7 +54,7 @@ Terminal only. Needs a window at least 54 columns wide; narrower, the stock spin
 
 None. The mod reads only the spinner word and the turn's elapsed time that Claude Code hands it,
 and draws in the terminal. Every line Clawd says is written into the mod; none is generated. It makes no network requests, no model calls, reads and writes no files,
-and stores nothing. There is no remote server, so there is no privacy policy to link.
+and stores one thing: whether you turned his speech off (`talk`, in Claude Code's own plugin store). There is no remote server, so there is no privacy policy to link.
 
 ## Develop
 
