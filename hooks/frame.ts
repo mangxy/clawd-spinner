@@ -4,29 +4,22 @@ import { SCENES } from './scenes'
 
 type Cell = [number, number, number]
 
-/** The scene draws full-size; SCALE shrinks it on the way out (2 = half size). */
-export const SCALE = 2
-export const OUT_ROWS = ROWS / SCALE
-
 /** The scene's key: the word lower-cased, accents and a trailing ellipsis dropped. */
 export const keyOf = (word: string) =>
   word.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[.\u2026]+$/, '')
 
 export const sceneFor = (word: string): Draw => SCENES[keyOf(word)] ?? ACTS[actFor(word)]
 
-/** The frame's cells, packed for a Raster: floor(columns / SCALE) * OUT_ROWS triplets of [codePoint, fg, bg]. */
+/** The frame's cells, packed for a Raster: columns * ROWS triplets of [codePoint, fg, bg]. */
 export function frame(m: Moment, columns: number): Uint32Array {
   const c = canvas(columns)
   const glyphs: Glyph[] = []
   sceneFor(m.word)(c, m, glyphs)
   const cells: Cell[] = []
-  const W = Math.floor(columns / SCALE)
-  for (let r = 0; r < OUT_ROWS; r++) {
-    for (let x = 0; x < W; x++) {
-      const py = 2 * SCALE * r
-      const px = SCALE * x
-      const top = c.px[py * columns + px]! !== DEF ? c.px[py * columns + px]! : c.px[py * columns + px + 1]!
-      const bot = c.px[(py + 1) * columns + px]! !== DEF ? c.px[(py + 1) * columns + px]! : c.px[(py + 1) * columns + px + 1]!
+  for (let r = 0; r < ROWS; r++) {
+    for (let x = 0; x < columns; x++) {
+      const top = c.px[2 * r * columns + x]!
+      const bot = c.px[(2 * r + 1) * columns + x]!
       if (top === DEF && bot === DEF) cells.push([0x20, DEF, DEF])
       else if (top === bot) cells.push([0x2588, top, DEF])
       else if (top === DEF) cells.push([0x2584, bot, DEF])
@@ -34,15 +27,10 @@ export function frame(m: Moment, columns: number): Uint32Array {
     }
   }
   for (const g of glyphs) {
-    const x = Math.floor(g.x / SCALE)
-    const row = Math.floor(g.row / SCALE)
-    const i = row * W + x
-    if (x >= 0 && x < W && row >= 0 && row < OUT_ROWS && cells[i]![0] === 0x20) cells[i] = [g.ch.codePointAt(0)!, g.fg, DEF]
+    const i = g.row * columns + g.x
+    if (g.x >= 0 && g.x < columns && g.row >= 0 && g.row < ROWS && cells[i]![0] === 0x20) cells[i] = [g.ch.codePointAt(0)!, g.fg, DEF]
   }
-  if (m.line && c.clawdAt) {
-    const at = { x: Math.floor(c.clawdAt.x / SCALE), y: Math.floor(c.clawdAt.y / SCALE) }
-    bubble(cells, W, at, m.line, m.lineT ?? Infinity)
-  }
+  if (m.line && c.clawdAt) bubble(cells, columns, c.clawdAt, m.line, m.lineT ?? Infinity)
   const out = new Uint32Array(cells.length * 3)
   cells.forEach(([cp, fg, bg], i) => out.set([cp, fg, bg], i * 3))
   return out
@@ -56,17 +44,17 @@ const TYPE_MS = 35  // one letter every 35ms as a new line starts
  * Clawd's speech bubble, three cell rows above and beside his head, with a tail down to him: to his
  * right when it fits, else to his left; the text is cut to fit the row. It follows him as he moves.
  */
-function bubble(cells: Cell[], W: number, at: { x: number; y: number }, line: string, lineT: number) {
+function bubble(cells: Cell[], columns: number, at: { x: number; y: number }, line: string, lineT: number) {
   const headRow = Math.floor(at.y / 2)
   const top = Math.max(0, headRow - 4)
-  const room = Math.max(at.x - 2, W - (at.x + 8) - 1)
+  const room = Math.max(at.x - 2, columns - (at.x + 15) - 1)
   const text = line.slice(0, Math.max(0, room - 4)).slice(0, Math.floor(lineT / TYPE_MS) + 1)
   if (room < 8 || !text) return
   const width = Math.min(line.length, room - 4) + 4
-  const right = at.x + 8 + width <= W
+  const right = at.x + 15 + width <= columns
   const x0 = right ? at.x + 15 : Math.max(0, at.x - width - 1)
   const set = (x: number, row: number, ch: string, fg: number) => {
-    if (x >= 0 && x < W && row >= 0 && row < OUT_ROWS) cells[row * W + x] = [ch.codePointAt(0)!, fg, DEF]
+    if (x >= 0 && x < columns && row >= 0 && row < ROWS) cells[row * columns + x] = [ch.codePointAt(0)!, fg, DEF]
   }
   const inner = width - 2
   set(x0, top, '╭', EDGE_GREY)
