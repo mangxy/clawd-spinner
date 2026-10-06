@@ -13,6 +13,7 @@ const spin = {
   turnAt: 0, word: '', working: false, done: false, last: '', blit: true,
   talk: true,  // his speech bubble; /clawd-talk turns it off and on, remembered across sessions
   mount: null as { requestId: string; columns: number } | null,
+  denyAt: 0,
 }
 
 /**
@@ -28,6 +29,9 @@ function moment(now: number): A.Moment {
 async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return
+  // A denied blit once wore off when the request id changed; on this engine the id is the agent's
+  // and never changes, so retry the blit ourselves after a beat rather than redrawing every frame.
+  if (!spin.blit && Date.now() - spin.denyAt > 2000) spin.blit = true
   const now = Date.now()
   if (!spin.working || spin.mount !== m) return  // the turn ended while we awaited
   const cells = encode(frame(moment(now), m.columns))
@@ -41,6 +45,7 @@ async function paint($: EngineInterface) {
   const r = await $.ui.blit({ requestId: m.requestId, key: 'act', cells })
   if ('deny' in r && r.deny) {
     spin.blit = false
+    spin.denyAt = Date.now()
     $.ui.invalidate('ui.render')
   }
 }
