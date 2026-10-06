@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '',
+  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '', alive: false,
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -105,11 +105,17 @@ export const register: Register = on => {
         lastKind = chunk.kind
         log($, `step kind=${chunk.kind}`)
       }
-      // the loop is out: after stop the engine redraws for a beat while the
-      // final text lands, and a takeover frame in that window is the flash
+      // every API request's stream ends in a stop chunk — mid-turn stops (after
+      // a tool leg) are followed by more work, only the last one precedes
+      // turn.complete. So a stop stands the act down (the engine redraws while
+      // text lands; a takeover frame there flashes) and the next activity
+      // chunk revives it; turn.complete is the fold that sticks.
       if (chunk.kind === 'stop') {
-        log($, 'stop → fold')
+        log($, 'stop → stand down')
         ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+      } else if (spin.alive) {
+        spin.working = true
+        spin.doneAt = 0
       }
       yield chunk
     }
@@ -120,6 +126,7 @@ export const register: Register = on => {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
       spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
       spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
+      spin.alive = true
       // mount stays: the submit's renders just mounted this turn's row, and no render fires
       // between here and the model's first byte — dropping it froze the act exactly there
     }
@@ -129,9 +136,8 @@ export const register: Register = on => {
   on('turn.complete', ($, e, next) => {
     if (!e.agentId) {
       log($, 'turn.complete')
-      // fold the act away and mark when: the engine keeps calling render for a beat
-      // after the turn (its tail redraws), and a takeover frame there flashes
-      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+      // fold the act away for good — no mid-turn stop revival past this point
+      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord, spin.alive] = [false, null, Date.now(), spin.word, false]
     }
     return next(e)
   })
