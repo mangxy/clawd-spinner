@@ -1,7 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import * as A from './acts'
-import { encode, frame } from './frame'
+import { encode, frame, OUT_ROWS, SCALE } from './frame'
 import { lineFor } from './rocky'
 
 const FRAME_MS = 83  // ~12 frames a second
@@ -105,7 +105,7 @@ export const register: Register = on => {
     spin.last = cells
     return (
       <Box flexDirection="column">
-        <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
+        <Raster key="act" columns={Math.floor(columns / SCALE)} rows={OUT_ROWS} cells={cells} />
         {official}
       </Box>
     )
