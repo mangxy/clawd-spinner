@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false, doneAt: 0,
+  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '',
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -105,6 +105,12 @@ export const register: Register = on => {
         lastKind = chunk.kind
         log($, `step kind=${chunk.kind}`)
       }
+      // the loop is out: after stop the engine redraws for a beat while the
+      // final text lands, and a takeover frame in that window is the flash
+      if (chunk.kind === 'stop') {
+        log($, 'stop → fold')
+        ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+      }
       yield chunk
     }
   })
@@ -125,7 +131,7 @@ export const register: Register = on => {
       log($, 'turn.complete')
       // fold the act away and mark when: the engine keeps calling render for a beat
       // after the turn (its tail redraws), and a takeover frame there flashes
-      ;[spin.working, spin.mount, spin.doneAt] = [false, null, Date.now()]
+      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
     }
     return next(e)
   })
@@ -133,8 +139,13 @@ export const register: Register = on => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
-    if (!spin.working && Date.now() - spin.doneAt < 1500) return official  // the turn's tail renders: the row is the engine's own, a takeover frame here flashes
-    if (e.props.word) spin.word = e.props.word
+    if (!spin.working && spin.doneAt) {
+      // the turn's tail renders pass through — the row is the engine's own. The
+      // next turn's first render (it arrives before turn.start) is told apart by
+      // the spinner word having changed; the 5s fallback covers a word repeat
+      const w = String(e.props.word ?? '')
+      if ((!w || w === spin.stopWord) && Date.now() - spin.doneAt <= 5000) return official
+    }
     if (e.props.word) spin.word = e.props.word
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE

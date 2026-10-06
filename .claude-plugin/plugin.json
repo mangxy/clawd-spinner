@@ -1,6 +1,6 @@
 {
   "name": "clawd-spinner",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "description": "Clawd acts out the spinner's word above it while Claude works: cooking for Saut\u00e9ing, dancing for Vibing, pacing for Pondering, a scene of its own for every one of the 189 spinner words. Uses none of your usage: everything is animated locally, no model calls.",
   "author": {
     "name": "Sai Rudra"
