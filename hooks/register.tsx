@@ -8,9 +8,9 @@ const FRAME_MS = 83  // ~12 frames a second
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 
-/** The spinner row while a turn runs. Module state: a reload starts the act over, which is fine. */
+/** The band above the prompt while a turn runs. Module state: a reload starts the act over, which is fine. */
 const spin = {
-  turnAt: 0, word: '', working: false, done: false, last: '', blit: true,
+  turnAt: 0, word: '', last: '', blit: true,
   talk: true,  // his speech bubble; /clawd-talk turns it off and on, remembered across sessions
   mount: null as { requestId: string; columns: number } | null,
   denyAt: 0,
@@ -28,12 +28,11 @@ function moment(now: number): A.Moment {
 
 async function paint($: EngineInterface) {
   const m = spin.mount
-  if (!m || !spin.working) return
-  // A denied blit once wore off when the request id changed; on this engine the id is the agent's
-  // and never changes, so retry the blit ourselves after a beat rather than redrawing every frame.
+  if (!m) return  // the band is folded away: nothing mounted to repaint
+  // A denied blit once wore off when the request id changed; the band's id never changes,
+  // so retry the blit ourselves after a beat rather than redrawing every frame.
   if (!spin.blit && Date.now() - spin.denyAt > 2000) spin.blit = true
   const now = Date.now()
-  if (!spin.working || spin.mount !== m) return  // the turn ended while we awaited
   const cells = encode(frame(moment(now), m.columns))
   if (cells === spin.last) return
   spin.last = cells
@@ -78,41 +77,45 @@ export const register: Register = on => {
   })
 
   // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.
-  on('turn.start', async ($, e, next) => {
-    if (!spin.working) [spin.working, spin.turnAt] = [true, Date.now()]
-    spin.done = false
+  on('turn.start', ($, e, next) => {
+    if (!e.agentId) {
+      spin.turnAt = Date.now()
+      spin.last = ''
+      $.ui.invalidate('ui.render')  // wake the band: isWorking has turned
+    }
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
-    // Latch before the engine's own completion work: a Spinner frame it renders along the way —
-    // the "Baked for Ns" line and such — must pass straight through, not be taken over for a flash.
-    if (!e.agentId) [spin.working, spin.mount, spin.done] = [false, null, true]
+    if (!e.agentId) $.ui.invalidate('ui.render')  // fold the band away: isWorking has turned
     return await next(e)
   })
 
-  // Clawd acts out the word with a line in his bubble; under him the spinner's line (the word and
-  // the turn's time).
-  on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
-    const columns = (e.viewport?.columns ?? 0) - EDGE
-    if (e.surface !== 'terminal' || columns < 50 || spin.done) {  // a late Spinner frame after turn.complete: don't take it over
+  // The spinner's word tells Clawd what to act out; the row itself stays the engine's own. While
+  // the model streams its answer the engine takes that row away for the text, so Clawd lives in
+  // the band above the prompt, a site it never takes away.
+  on('ui.render', { component: 'Spinner' }, ($, e, next) => {
+    if (e.surface === 'terminal' && e.props.word) spin.word = e.props.word
+    return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.surface !== 'terminal' || e.props.hasSurvey || !e.props.isWorking) {
       spin.mount = null
       return next(e)
     }
-    const { Raster, Box } = $.ui.resolve(e)
-    const official = await next(e)  // the engine's own spinner line, untouched: its glyph animation drives itself
+    const columns = (e.props.bodyColumns ?? 0) - EDGE
+    if (columns < 50) return next(e)
     const now = Date.now()
-    if (spin.done) return official  // the turn ended while we awaited: let the engine's own line stand
-    if (!spin.working) [spin.working, spin.turnAt] = [true, now]  // a reload mid-turn
+    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn
+    const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
-    spin.word = e.props.word
     spin.mount = { requestId: e.requestId, columns }
     const cells = encode(frame(moment(now), columns))
     spin.last = cells
     return (
-      <Box flexDirection="column">
+      <Box>
         <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
-        {official}
       </Box>
     )
   })
