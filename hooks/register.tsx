@@ -122,7 +122,8 @@ export const register: Register = on => {
       spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
       spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
       spin.lastTextAt = 0  // the new turn has streamed no text yet: the row is Clawd's from frame one
-      spin.mount = null  // the old turn's row is gone; the next render mounts a fresh one
+      // mount stays: the submit's renders just mounted this turn's row, and no render fires
+      // between here and the model's first byte — dropping it froze the act exactly there
     }
     return next(e)
   })
