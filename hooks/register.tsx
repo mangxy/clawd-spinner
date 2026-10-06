@@ -96,6 +96,7 @@ export const register: Register = on => {
     const { Raster, Box } = $.ui.resolve(e)
     const official = await next(e)  // the engine's own spinner line, untouched: its glyph animation drives itself
     const now = await $.clock.now()
+    if (spin.done) return official  // the turn ended while we awaited: let the engine's own line stand
     if (!spin.working) [spin.working, spin.turnAt] = [true, now]  // a reload mid-turn
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.word = e.props.word
