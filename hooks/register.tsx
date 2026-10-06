@@ -93,7 +93,8 @@ export const register: Register = on => {
       spin.mount = null
       return next(e)
     }
-    const { Raster, Box, Text } = $.ui.resolve(e)
+    const { Raster, Box } = $.ui.resolve(e)
+    const official = await next(e)  // the engine's own spinner line, untouched: its glyph animation drives itself
     const now = await $.clock.now()
     if (!spin.working) [spin.working, spin.turnAt] = [true, now]  // a reload mid-turn
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
@@ -104,7 +105,7 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
-        <Text><Text color="#d97757">✻ {e.props.message ?? e.props.word}{e.props.suffix}</Text><Text dimColor> ({A.elapsed(now - spin.turnAt)})</Text></Text>
+        {official}
       </Box>
     )
   })
