@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '', submitAt: 0,
+  last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -113,27 +113,22 @@ export const register: Register = on => {
         log($, `stop reason=${chunk.stopReason}`)
         if (chunk.stopReason === 'end_turn') {
           log($, 'end_turn → fold')
-          ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+          ;[spin.working, spin.mount] = [false, null]
         }
       }
       yield chunk
     }
   })
 
-  on('prompt.submit', ($, e, next) => {
-    // the submit's renders mount the row before turn.start fires — this marks
-    // the render that follows as a real turn's first frame, not an idle repaint
-    spin.submitAt = Date.now()
-    return next(e)
-  })
-
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
-      spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
-      spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
-      // mount stays: the submit's renders just mounted this turn's row, and no render fires
-      // between here and the model's first byte — dropping it froze the act exactly there
+      // the act starts with the turn, not the submit: between them the prompt
+      // hooks (memory recall & co.) may hold the UI frozen — Clawd mounted
+      // there would stand petrified the whole wait. The official spinner row
+      // covers it; Clawd mounts on the first render after this point
+      spin.working = true
+      spin.turnAt = Date.now()
     }
     return next(e)
   })
@@ -142,7 +137,7 @@ export const register: Register = on => {
     if (!e.agentId) {
       log($, 'turn.complete')
       // fold the act away for good — no mid-turn stop revival past this point
-      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+      ;[spin.working, spin.mount] = [false, null]
     }
     return next(e)
   })
@@ -150,30 +145,21 @@ export const register: Register = on => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
+    // idle means idle, all of it: the submit's renders still behind the prompt
+    // hooks, a reload's repaint, a resize, a freshly reloaded module with no
+    // history — the row stays the engine's own (the official ✻ stands in).
+    // Clawd opens only once turn.start has fired: the model request is really
+    // leaving, the freeze is over, the act runs its whole length live
     if (!spin.working) {
-      if (spin.doneAt) {
-        // the turn's tail renders pass through — the row is the engine's own. The
-        // next turn's first render (it arrives before turn.start) is told apart by
-        // the spinner word having changed; the 5s fallback covers a word repeat
-        const w = String(e.props.word ?? '')
-        if ((!w || w === spin.stopWord) && Date.now() - spin.doneAt <= 5000) return official
-      }
-      // repaints nothing stands behind — a reload's repaint, a resize, a freshly
-      // reloaded module with no history — pass through too: mounting the row there
-      // flashes one static Clawd frame. Only a recent prompt.submit (its first
-      // render lands before turn.start) reopens the row
-      if (!spin.submitAt || Date.now() - spin.submitAt > 30_000) {
-        log($, 'render idle-pass (no prompt behind it)')
-        return official
-      }
+      log($, 'render idle-pass (no turn started)')
+      return official
     }
     if (e.props.word) spin.word = e.props.word
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (columns < 50) return official
     const now = Date.now()
-    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn
-    if (!spin.working) log($, `render while idle (working=0)`)
+    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn, before its first render
     const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
