@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '',
+  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '', submitAt: 0,
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -120,6 +120,13 @@ export const register: Register = on => {
     }
   })
 
+  on('prompt.submit', ($, e, next) => {
+    // the submit's renders mount the row before turn.start fires — this marks
+    // the render that follows as a real turn's first frame, not an idle repaint
+    spin.submitAt = Date.now()
+    return next(e)
+  })
+
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
@@ -143,12 +150,22 @@ export const register: Register = on => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
-    if (!spin.working && spin.doneAt) {
-      // the turn's tail renders pass through — the row is the engine's own. The
-      // next turn's first render (it arrives before turn.start) is told apart by
-      // the spinner word having changed; the 5s fallback covers a word repeat
-      const w = String(e.props.word ?? '')
-      if ((!w || w === spin.stopWord) && Date.now() - spin.doneAt <= 5000) return official
+    if (!spin.working) {
+      if (spin.doneAt) {
+        // the turn's tail renders pass through — the row is the engine's own. The
+        // next turn's first render (it arrives before turn.start) is told apart by
+        // the spinner word having changed; the 5s fallback covers a word repeat
+        const w = String(e.props.word ?? '')
+        if ((!w || w === spin.stopWord) && Date.now() - spin.doneAt <= 5000) return official
+      }
+      // repaints nothing stands behind — a reload's repaint, a resize, a freshly
+      // reloaded module with no history — pass through too: mounting the row there
+      // flashes one static Clawd frame. Only a recent prompt.submit (its first
+      // render lands before turn.start) reopens the row
+      if (!spin.submitAt || Date.now() - spin.submitAt > 30_000) {
+        log($, 'render idle-pass (no prompt behind it)')
+        return official
+      }
     }
     if (e.props.word) spin.word = e.props.word
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
