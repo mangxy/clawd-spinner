@@ -29,7 +29,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true, lastTextAt: 0,
-  last: '', blit: true, denyAt: 0,
+  last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -41,7 +41,7 @@ function moment(now: number): A.Moment {
 
 async function paint($: EngineInterface) {
   const m = spin.mount
-  if (!m) return  // standing down (text streaming) or the row is gone: nothing mounted to repaint
+  if (!m || !spin.working) return  // standing down (no turn running, text streaming, or the row is gone)
   if (Date.now() - spin.lastTextAt < TEXT_WINDOW_MS) {
     spin.mount = null  // the heart woke mid-tick: the next render hands the row to the engine
     log($, 'paint heart-clear mount')
@@ -119,7 +119,8 @@ export const register: Register = on => {
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
-      spin.turnAt = Date.now()
+      spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
+      spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
       spin.lastTextAt = 0  // the new turn has streamed no text yet: the row is Clawd's from frame one
       spin.mount = null  // the old turn's row is gone; the next render mounts a fresh one
     }
@@ -128,7 +129,7 @@ export const register: Register = on => {
 
   on('turn.complete', ($, e, next) => {
     if (!e.agentId) log($, 'turn.complete')
-    if (!e.agentId) spin.mount = null  // the row folds away with the turn
+    if (!e.agentId) [spin.working, spin.mount] = [false, null]  // the row folds away with the turn
     return next(e)
   })
 
@@ -146,6 +147,7 @@ export const register: Register = on => {
     if (columns < 50) return official
     const now = Date.now()
     if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn
+    if (!spin.working) log($, `render while idle (working=0)`)
     const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
