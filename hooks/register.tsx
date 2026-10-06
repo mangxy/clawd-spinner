@@ -7,7 +7,6 @@ import { lineFor } from './rocky'
 const FRAME_MS = 83  // ~12 frames a second
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
-const TEXT_WINDOW_MS = 600  // after the last answer-text chunk, how long the row stays the engine's own
 
 const LOG = '/tmp/clawd-probe.log'
 let buf = ''
@@ -28,7 +27,7 @@ function log($: EngineInterface, s: string) {
 }
 
 const spin = {
-  turnAt: 0, word: '', talk: true, lastTextAt: 0,
+  turnAt: 0, word: '', talk: true,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
 }
@@ -41,12 +40,7 @@ function moment(now: number): A.Moment {
 
 async function paint($: EngineInterface) {
   const m = spin.mount
-  if (!m || !spin.working) return  // standing down (no turn running, text streaming, or the row is gone)
-  if (Date.now() - spin.lastTextAt < TEXT_WINDOW_MS) {
-    spin.mount = null  // the heart woke mid-tick: the next render hands the row to the engine
-    log($, 'paint heart-clear mount')
-    return
-  }
+  if (!m || !spin.working) return  // standing down (no turn running, or the row is gone)
   if (!spin.blit && Date.now() - spin.denyAt > 2000) {
     spin.blit = true
     log($, 'paint blit-retry-after-deny')
@@ -111,7 +105,6 @@ export const register: Register = on => {
         lastKind = chunk.kind
         log($, `step kind=${chunk.kind}`)
       }
-      if (chunk.kind === 'text') spin.lastTextAt = Date.now()
       yield chunk
     }
   })
@@ -121,7 +114,6 @@ export const register: Register = on => {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
       spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
       spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
-      spin.lastTextAt = 0  // the new turn has streamed no text yet: the row is Clawd's from frame one
       // mount stays: the submit's renders just mounted this turn's row, and no render fires
       // between here and the model's first byte — dropping it froze the act exactly there
     }
@@ -138,12 +130,7 @@ export const register: Register = on => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
     if (e.props.word) spin.word = e.props.word
-    const inWin = Date.now() - spin.lastTextAt < TEXT_WINDOW_MS
-    log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} win=${inWin ? 1 : 0} mount=${spin.mount ? 1 : 0}`)
-    if (inWin) {
-      spin.mount = null  // text is streaming: the row is the engine's own
-      return official
-    }
+    log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (columns < 50) return official
     const now = Date.now()
