@@ -129,6 +129,10 @@ export const register: Register = on => {
       // covers it; Clawd mounts on the first render after this point
       spin.working = true
       spin.turnAt = Date.now()
+      // the engine doesn't repaint the spinner row on its own once the hooks
+      // finish — the row just sits there until the next token tick. One nudge
+      // mounts Clawd the instant the freeze lifts
+      $.ui.invalidate('ui.render')
     }
     return next(e)
   })
