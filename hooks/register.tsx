@@ -80,9 +80,10 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
-    const done = await next(e)
+    // Latch before the engine's own completion work: a Spinner frame it renders along the way —
+    // the "Baked for Ns" line and such — must pass straight through, not be taken over for a flash.
     if (!e.agentId) [spin.working, spin.mount, spin.done] = [false, null, true]
-    return done
+    return await next(e)
   })
 
   // Clawd acts out the word with a line in his bubble; under him the spinner's line (the word and
