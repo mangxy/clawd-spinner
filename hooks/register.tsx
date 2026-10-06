@@ -10,7 +10,7 @@ const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10
 
 /** The spinner row while a turn runs. Module state: a reload starts the act over, which is fine. */
 const spin = {
-  turnAt: 0, word: '', working: false, last: '', blit: true,
+  turnAt: 0, word: '', working: false, done: false, last: '', blit: true,
   talk: true,  // his speech bubble; /clawd-talk turns it off and on, remembered across sessions
   mount: null as { requestId: string; columns: number } | null,
 }
@@ -29,6 +29,7 @@ async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return
   const now = await $.clock.now()
+  if (!spin.working || spin.mount !== m) return  // the turn ended while we awaited
   const cells = encode(frame(moment(now), m.columns))
   if (cells === spin.last) return
   spin.last = cells
@@ -74,12 +75,13 @@ export const register: Register = on => {
   // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.
   on('turn.start', async ($, e, next) => {
     if (!spin.working) [spin.working, spin.turnAt] = [true, await $.clock.now()]
+    spin.done = false
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (!e.agentId) [spin.working, spin.mount] = [false, null]
+    if (!e.agentId) [spin.working, spin.mount, spin.done] = [false, null, true]
     return done
   })
 
@@ -87,7 +89,7 @@ export const register: Register = on => {
   // the turn's time).
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const columns = (e.viewport?.columns ?? 0) - EDGE
-    if (e.surface !== 'terminal' || columns < 50) {
+    if (e.surface !== 'terminal' || columns < 50 || spin.done) {  // a late Spinner frame after turn.complete: don't take it over
       spin.mount = null
       return next(e)
     }
