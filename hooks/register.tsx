@@ -28,7 +28,7 @@ function moment(now: number): A.Moment {
 async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return
-  const now = await $.clock.now()
+  const now = Date.now()
   if (!spin.working || spin.mount !== m) return  // the turn ended while we awaited
   const cells = encode(frame(moment(now), m.columns))
   if (cells === spin.last) return
@@ -74,7 +74,7 @@ export const register: Register = on => {
 
   // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.
   on('turn.start', async ($, e, next) => {
-    if (!spin.working) [spin.working, spin.turnAt] = [true, await $.clock.now()]
+    if (!spin.working) [spin.working, spin.turnAt] = [true, Date.now()]
     spin.done = false
     return next(e)
   })
@@ -96,7 +96,7 @@ export const register: Register = on => {
     }
     const { Raster, Box } = $.ui.resolve(e)
     const official = await next(e)  // the engine's own spinner line, untouched: its glyph animation drives itself
-    const now = await $.clock.now()
+    const now = Date.now()
     if (spin.done) return official  // the turn ended while we awaited: let the engine's own line stand
     if (!spin.working) [spin.working, spin.turnAt] = [true, now]  // a reload mid-turn
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
