@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '', alive: false,
+  last: '', blit: true, denyAt: 0, working: false, doneAt: 0, stopWord: '',
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -105,17 +105,16 @@ export const register: Register = on => {
         lastKind = chunk.kind
         log($, `step kind=${chunk.kind}`)
       }
-      // every API request's stream ends in a stop chunk — mid-turn stops (after
-      // a tool leg) are followed by more work, only the last one precedes
-      // turn.complete. So a stop stands the act down (the engine redraws while
-      // text lands; a takeover frame there flashes) and the next activity
-      // chunk revives it; turn.complete is the fold that sticks.
+      // every API request's stream ends in a stop chunk, but stopReason tells
+      // the two apart: tool_use pauses mean more work is coming (the act keeps
+      // running through them), end_turn is the loop's exit — fold right there,
+      // before the engine's tail redraws, so no takeover frame flashes
       if (chunk.kind === 'stop') {
-        log($, 'stop → stand down')
-        ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
-      } else if (spin.alive) {
-        spin.working = true
-        spin.doneAt = 0
+        log($, `stop reason=${chunk.stopReason}`)
+        if (chunk.stopReason === 'end_turn') {
+          log($, 'end_turn → fold')
+          ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
+        }
       }
       yield chunk
     }
@@ -126,7 +125,6 @@ export const register: Register = on => {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
       spin.working = true  // the act runs only inside a turn: idle paints blit at a row that is
       spin.turnAt = Date.now()  // not on screen, and the engine denies every one of them
-      spin.alive = true
       // mount stays: the submit's renders just mounted this turn's row, and no render fires
       // between here and the model's first byte — dropping it froze the act exactly there
     }
@@ -137,7 +135,7 @@ export const register: Register = on => {
     if (!e.agentId) {
       log($, 'turn.complete')
       // fold the act away for good — no mid-turn stop revival past this point
-      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord, spin.alive] = [false, null, Date.now(), spin.word, false]
+      ;[spin.working, spin.mount, spin.doneAt, spin.stopWord] = [false, null, Date.now(), spin.word]
     }
     return next(e)
   })
