@@ -9,29 +9,30 @@ const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 const TEXT_WINDOW_MS = 600  // after the last answer-text chunk, how long the row stays the engine's own
 
-/**
- * The spinner row while a turn runs. Module state: a reload starts the act over, which is fine.
- *
- * While the model streams its answer the engine takes the spinner row away for the text, and in the
- * gaps between blocks it briefly brings the row back — a mod that draws there unconditionally
- * flashes in and out with those gaps. So the row is drawn only while no answer text has arrived
- * recently: a text chunk of the main loop's stream updates lastTextAt (a thinking chunk never does;
- * the spinner row is alive and Clawd's while Claude thinks), and inside the window the hook hands
- * the row to the engine untouched. The engine's own spinner animation does not re-run render hooks,
- * so the clock repaints the mounted Raster by blit; a denied blit is retried after a beat rather
- * than redrawing every frame.
- */
+const LOG = '/tmp/clawd-probe.log'
+let buf = ''
+let lastFlush = 0
+function log($: EngineInterface, s: string) {
+  buf += `${Date.now()} ${s}\n`
+  const now = Date.now()
+  if (now - lastFlush < 1000 && buf.length < 8192) return
+  lastFlush = now
+  const out = buf
+  buf = ''
+  void (async () => {
+    try {
+      const prev = await $.fs.read(LOG).catch(() => '')
+      await $.fs.write(LOG, prev + out)
+    } catch { /* probe best effort */ }
+  })()
+}
+
 const spin = {
   turnAt: 0, word: '', talk: true, lastTextAt: 0,
-  // talk: his speech bubble; /clawd-talk turns it off and on, remembered across sessions
   last: '', blit: true, denyAt: 0,
   mount: null as { requestId: string; columns: number } | null,
 }
 
-/**
- * The moment to draw: the scene's time and what Clawd says in his bubble. Each word has ten lines,
- * starting at a different one each turn and moving on every 10s.
- */
 function moment(now: number): A.Moment {
   const t = now - spin.turnAt
   const n = Math.floor(spin.turnAt / 1000) + Math.floor(t / LINE_MS)
@@ -43,24 +44,32 @@ async function paint($: EngineInterface) {
   if (!m) return  // standing down (text streaming) or the row is gone: nothing mounted to repaint
   if (Date.now() - spin.lastTextAt < TEXT_WINDOW_MS) {
     spin.mount = null  // the heart woke mid-tick: the next render hands the row to the engine
+    log($, 'paint heart-clear mount')
     return
   }
-  // A denied blit once wore off when the request id changed; this row's id never changes, so
-  // retry the blit ourselves after a beat rather than redrawing every frame.
-  if (!spin.blit && Date.now() - spin.denyAt > 2000) spin.blit = true
+  if (!spin.blit && Date.now() - spin.denyAt > 2000) {
+    spin.blit = true
+    log($, 'paint blit-retry-after-deny')
+  }
   const cells = encode(frame(moment(Date.now()), m.columns))
-  if (cells === spin.last) return
+  if (cells === spin.last) {
+    log($, 'paint same-cells skip')
+    return
+  }
   spin.last = cells
   if (!spin.blit) {
-    // This row refused blits: redraw it instead (the engine folds these to its own rate).
+    log($, 'paint invalidate-path (blit off)')
     $.ui.invalidate('ui.render')
     return
   }
   const r = await $.ui.blit({ requestId: m.requestId, key: 'act', cells })
   if ('deny' in r && r.deny) {
+    log($, 'paint BLIT-DENY')
     spin.blit = false
     spin.denyAt = Date.now()
     $.ui.invalidate('ui.render')
+  } else {
+    log($, 'paint blit-ok')
   }
 }
 
@@ -73,12 +82,12 @@ export const register: Register = on => {
       spin.talk = true
     }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
+    log($, 'session.start')
     const tick = () => paint($)
     $.clock.every(FRAME_MS, tick)
     return next(e)
   })
 
-  // /clawd-talk flips his speech bubble; /clawd-talk on or /clawd-talk off sets it.
   on('command.run', { command: 'clawd-talk' }, async ($, e) => {
     const arg = String((e as any).args ?? '').trim().toLowerCase()
     spin.talk = arg === 'on' ? true : arg === 'off' ? false : !spin.talk
@@ -91,23 +100,25 @@ export const register: Register = on => {
     return { text: spin.talk ? 'Clawd talks again. Hello hello!' : 'Clawd is quiet now. /clawd-talk brings his voice back.' }
   })
 
-  // The heart of the anti-flash scheme: every text chunk of the main loop's response marks now.
-  // A subagent's text (its own agentId) does not touch it: the main window's row is not the one
-  // being folded away for it.
   on('turn.step', async function* ($, e, next) {
     if (e.agentId) {
       yield* next(e)
       return
     }
+    let lastKind = ''
     for await (const chunk of next(e)) {
+      if (chunk.kind !== lastKind) {
+        lastKind = chunk.kind
+        log($, `step kind=${chunk.kind}`)
+      }
       if (chunk.kind === 'text') spin.lastTextAt = Date.now()
       yield chunk
     }
   })
 
-  // A subagent's turn starts while the main one runs: the clock keeps the main turn's start.
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
+      log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
       spin.turnAt = Date.now()
       spin.lastTextAt = 0  // the new turn has streamed no text yet: the row is Clawd's from frame one
       spin.mount = null  // the old turn's row is gone; the next render mounts a fresh one
@@ -116,17 +127,18 @@ export const register: Register = on => {
   })
 
   on('turn.complete', ($, e, next) => {
+    if (!e.agentId) log($, 'turn.complete')
     if (!e.agentId) spin.mount = null  // the row folds away with the turn
     return next(e)
   })
 
-  // Clawd above the spinner's own line (the word, the tokens, the elapsed time — the engine's
-  // own tree, its animation included), standing down whenever answer text is on its way.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
     if (e.props.word) spin.word = e.props.word
-    if (Date.now() - spin.lastTextAt < TEXT_WINDOW_MS) {
+    const inWin = Date.now() - spin.lastTextAt < TEXT_WINDOW_MS
+    log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} win=${inWin ? 1 : 0} mount=${spin.mount ? 1 : 0}`)
+    if (inWin) {
       spin.mount = null  // text is streaming: the row is the engine's own
       return official
     }
