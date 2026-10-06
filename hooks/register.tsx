@@ -28,7 +28,7 @@ function log($: EngineInterface, s: string) {
 
 const spin = {
   turnAt: 0, word: '', talk: true,
-  last: '', blit: true, denyAt: 0, working: false,
+  last: '', blit: true, denyAt: 0, working: false, doneAt: 0,
   mount: null as { requestId: string; columns: number } | null,
 }
 
@@ -121,14 +121,20 @@ export const register: Register = on => {
   })
 
   on('turn.complete', ($, e, next) => {
-    if (!e.agentId) log($, 'turn.complete')
-    if (!e.agentId) [spin.working, spin.mount] = [false, null]  // the row folds away with the turn
+    if (!e.agentId) {
+      log($, 'turn.complete')
+      // fold the act away and mark when: the engine keeps calling render for a beat
+      // after the turn (its tail redraws), and a takeover frame there flashes
+      ;[spin.working, spin.mount, spin.doneAt] = [false, null, Date.now()]
+    }
     return next(e)
   })
 
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
+    if (!spin.working && Date.now() - spin.doneAt < 1500) return official  // the turn's tail renders: the row is the engine's own, a takeover frame here flashes
+    if (e.props.word) spin.word = e.props.word
     if (e.props.word) spin.word = e.props.word
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE
