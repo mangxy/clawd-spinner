@@ -2,6 +2,12 @@
 
 A Claude Code mod: while Claude works, Clawd acts out the spinner word above the spinner line.
 
+> Maintained fork of [saiharsha03/clawd-spinner](https://github.com/saiharsha03/clawd-spinner).
+> On top of upstream: no flash on fast turns or `/reload-plugins`, the act stops cleanly at a turn's
+> real end, and Clawd opens only when the model actually starts responding — a slow prompt hook
+> (memory recall and friends) freezes the UI for a moment, and he no longer stands petrified through
+> it; the stock spinner covers that gap and he jumps in the instant the turn really starts.
+
 **It won't use any of your usage.** Every scene is drawn locally from code: no model calls, no tokens,
 no network. Your usage goes to the things that matter.
 
@@ -30,13 +36,27 @@ twenty for unseen words; `bubble()` in `hooks/frame.ts` draws it where `clawd()`
 ## Install
 
 ```
-/plugin marketplace add https://github.com/saiharsha03/clawd-spinner.git
+/plugin marketplace add https://github.com/mangxy/clawd-spinner.git
 /plugin install clawd-spinner@clawd-spinner
 ```
 
 Then `/reload-plugins` (or restart Claude Code). The HTTPS link works with or without SSH keys for
-GitHub; the short form `saiharsha03/clawd-spinner` may try SSH first. Or from a clone:
+GitHub; the short form `mangxy/clawd-spinner` may try SSH first. Or from a clone:
 `claude --plugin-dir ./clawd-spinner`.
+
+### 中文安装
+
+在 Claude Code 里依次执行：
+
+```
+/plugin marketplace add https://github.com/mangxy/clawd-spinner.git
+/plugin install clawd-spinner@clawd-spinner
+/reload-plugins
+```
+
+之后 Claude 干活时，输入框上方的官方转圈（✻）头顶就会有一只像素小螃蟹 Clawd 演对应的场景——
+189 个转圈词各配一景，旁边还有 Rocky 风台词气泡（`/clawd-talk` 可关）。纯本地动画，
+不联网、不耗模型额度。需要 Claude Code 2.1.287+。
 
 To update: `/plugin marketplace update clawd-spinner`, then `/plugin update clawd-spinner@clawd-spinner`.
 
@@ -46,15 +66,17 @@ while adding the marketplace goes away after `git config --global core.longpaths
 
 ## What the hooks do
 
-`hooks/register.tsx` hooks five events and only reads them; it never changes what they carry:
+`hooks/register.tsx` hooks six events and only reads them; it never changes what they carry:
 
 - `session.start`: in an interactive session, reads whether his speech is on, registers `/clawd-talk`,
   and starts a timer that repaints the animation about 12 times a second.
 - `command.run` for `/clawd-talk`: turns his speech bubble off or on and remembers the choice.
-- `turn.start`: notes when the turn began, so the scene's clock starts at 0 (a subagent's turn doesn't restart it).
+- `turn.step`: watches the stream's stop chunks — `end_turn` folds the act away right there, before
+  the engine's tail redraw, so nothing flashes (mid-turn `tool_use` pauses are skipped: more work is coming).
+- `turn.start`: notes when the turn began, so the scene's clock starts at 0 (a subagent's turn doesn't restart it), and nudges one repaint so Clawd mounts the instant the turn starts.
 - `turn.complete`: stops the animation when the main turn ends.
 - `ui.render` on the `Spinner` component: draws Clawd, and his speech bubble, above the spinner line. Below 54 columns, or outside
-  the terminal, it hands the spinner back to Claude Code unchanged.
+  the terminal, it hands the spinner back to Claude Code unchanged. While no turn is running (a slow prompt hook, a reload's repaint), it hands the spinner back too — Clawd only plays during a live turn.
 
 ## Privacy: what data it sends
 
