@@ -1,3 +1,4 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
 import * as A from './acts'
@@ -6,6 +7,11 @@ import { encode, frame } from './frame'
 import { lineFor } from './rocky'
 
 const FRAME_MS = 83  // ~12 frames a second
+
+// The act's continuity, kept by the host: a plugin reload starts the module
+// over, and without this the band goes blank, then flashes the first frame of
+// a restarted act — reading this back picks the act up where it stood
+const act = atom({ plugin: 'clawd-spinner', key: 'act' } as const, { word: '', turnAt: 0, force: null as string | null })
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 
@@ -92,6 +98,12 @@ export const register: Register = (on, options) => {
     } catch {
       spin.talk = true
     }
+    try {
+      const saved = await read($, act)
+      spin.word = saved.word
+      spin.turnAt = saved.turnAt
+      spin.force = saved.force
+    } catch { /* a fresh session: nothing to pick up */ }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
     await $.command.register({ name: 'clawd-word', description: 'Act out a word of your choosing — no more waiting on the spinner to roll it (no arg: back to the real words)' })
     log($, 'session.start')
@@ -146,6 +158,7 @@ export const register: Register = (on, options) => {
     if (arg) spin.word = arg
     spin.turnAt = Date.now()  // the new act starts now, from its first frame
     spin.last = ''
+    void update($, act, cur => ({ ...cur, force: spin.force, word: spin.word, turnAt: spin.turnAt })).catch(() => {})
     return { text: arg ? `Clawd acts out "${arg}" until you clear it: /clawd-word with no arg.` : 'Back to the real spinner words.' }
   })
 
@@ -158,7 +171,12 @@ export const register: Register = (on, options) => {
       // covers it; Clawd mounts on the first render after this point
       spin.working = true
       spin.turnAt = Date.now()
+      // the new turn's word hasn't arrived yet; holding the last act's scene
+      // here is the flash — the one the eye catches when the reply begins and
+      // the scene cuts. The band goes quiet instead, and the new act opens it
+      spin.word = spin.force ?? ''
       spin.last = ''  // a fresh act: don't let a same-cells frame skip the first paint
+      void update($, act, cur => ({ ...cur, turnAt: spin.turnAt, word: spin.word })).catch(() => {})
       // the engine doesn't repaint the spinner row on its own once the hooks
       // finish — the row just sits there until the next token tick. One nudge
       // mounts Clawd the instant the freeze lifts
@@ -183,7 +201,10 @@ export const register: Register = (on, options) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
     // the word tells Clawd what to act out in either place
-    if (e.props.word && !spin.force) spin.word = e.props.word
+    if (e.props.word && !spin.force) {
+      if (spin.word !== e.props.word) void update($, act, cur => ({ ...cur, word: e.props.word as string })).catch(() => {})
+      spin.word = e.props.word
+    }
     if (spin.place !== 'spinner') return official
     // idle means idle, all of it: the submit's renders still behind the prompt
     // hooks, a reload's repaint, a resize, a freshly reloaded module with no
