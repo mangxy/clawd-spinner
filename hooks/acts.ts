@@ -100,11 +100,11 @@ const BODIES: Record<Size, Body> = {
   middle: {
     art: [
       '..CCCCCC..',
-      '.CECCCCEC.',
-      '.CECCCCEC.',
-      '.CCCCCCCC.',
+      '..CECCEC..',
+      '..CECCEC..',
+      '..CCCCCC..',
     ],
-    legs: ['.C.C..C.C.', '..C.C..C.C'],
+    legs: ['..C.CC.C.', '...CCCC..'],
     armY: 2, span: 11,
   },
   small: {
@@ -153,7 +153,7 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const shade = mix(CLAWD, 0x000000, 0.18)
   const pal: Record<string, number> = { C: CLAWD, E: blink ? CLAWD : 0x1a1410 }
   body.art.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && pal[ch] !== undefined && P(i, y + j, pal[ch]!)))
-  for (let i = 1; i < W - 1; i++) P(i, y + body.art.length - 1, shade)
+  ;[...body.art[body.art.length - 1]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length - 1, shade))
   const stepping = pose === 'walk' || pose === 'dance' || pose === 'carry' || pose === 'umbrella'
   ;[...body.legs[stepping ? (f >> 1) % 2 : 0]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length, shade))
   const armY = y + body.armY
