@@ -54,6 +54,12 @@ export function put(c: Canvas, x: number, y: number, colour: number) {
 }
 
 export function rect(c: Canvas, x: number, y: number, w: number, h: number, colour: number) {
+  // props scale with Clawd: a stage built for 8 rows swamps a 6-row one.
+  // Shrunk from the bottom edge, so what stood on the ground still does
+  const h0 = h
+  w = Math.max(1, Math.round(w * SCALE))
+  h = Math.max(1, Math.round(h * SCALE))
+  y += h0 - h
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) put(c, x + i, y + j, colour)
 }
 
@@ -125,6 +131,7 @@ const BODIES: Record<Size, Body> = {
 export let SIZE: Size = 'large'
 export let CLAWD_TOP = GROUND - BODIES.large.art.length - 1
 export let CLAWD_SPAN = BODIES.large.span
+export let SCALE = 1  // props shrink with him: 0.75 at middle, 0.5 at small
 export const START = 3
 
 export function setSize(s: Size) {
@@ -135,6 +142,7 @@ export function setSize(s: Size) {
   GROUND = PH - 1
   CLAWD_TOP = GROUND - art.length - 1
   CLAWD_SPAN = span
+  SCALE = s === 'large' ? 1 : s === 'middle' ? 0.75 : 0.5
 }
 
 export type Pose = 'stand' | 'cast' | 'walk' | 'pan' | 'hammer' | 'crank' | 'dance' | 'carry' | 'water' | 'umbrella' | 'float'
@@ -148,8 +156,13 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const f = Math.floor(t / 83)
   const blink = f % 47 < 2
   const ox = Math.round(x)
-  const hop = pose === 'dance' ? -(Math.floor(t / 300) % 2) : 0
-  const breathe = (pose === 'stand' || pose === 'cast') && Math.floor(t / 700) % 2 ? 1 : 0
+  // hops lift a whole cell (2 pixels), never one: an odd shift parks the eyes
+  // across a cell boundary and they turn from squares into bars mid-dance
+  const hop = pose === 'dance' ? -2 * (Math.floor(t / 300) % 2) : 0
+  // breathing shifts him a pixel, and at middle/small that parks the eyes
+  // across a cell boundary — the tall-bar blink that reads as a deformity.
+  // Large keeps it: the bars there already cross cells both ways
+  const breathe = SCALE === 1 && (pose === 'stand' || pose === 'cast') && Math.floor(t / 700) % 2 ? 1 : 0
   const y = CLAWD_TOP + hop + breathe - lift
   c.clawdAt = { x: ox, y }
   const at = (i: number) => (facing > 0 ? ox + i : ox + W - 1 - i)
@@ -167,7 +180,8 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   if (pose === 'cast' || (pose === 'dance' && beat === 1) || pose === 'umbrella') right = [[ab, armY - 1], [ab + 1, armY - 2]]
   if (pose === 'hammer') right = t % 700 < 450 ? [[ab, armY - 1], [ab + 1, armY - 2]] : [[ab, armY], [ab + 1, armY + 1]]
   if (pose === 'crank') right = [[ab, armY], [ab + 1 + Math.round(Math.cos(t / 250)), armY + Math.round(Math.sin(t / 250))]]
-  if (pose === 'pan' || pose === 'water' || pose === 'carry') right = [[ab, armY], [ab + 1, armY], [ab + 2, armY]]
+  // pan/water/carry stretch the paw two cells out; at middle that arm outgrew
+  // the left one — held at two like the rest, the props hang off the hand the same
   for (const [i, yy] of [...left, ...right]) P(i, yy, CLAWD)
   const [hi, hy] = right[right.length - 1]!
   const hand: [number, number] = [at(hi), hy]
@@ -309,6 +323,7 @@ const build: Draw = (c, m) => {
 }
 
 export function gear(c: Canvas, cx: number, cy: number, r: number, angle: number, colour: number) {
+  r *= SCALE
   for (let a = 0; a < 24; a++) put(c, cx + Math.cos((a / 24) * Math.PI * 2) * r, cy + Math.sin((a / 24) * Math.PI * 2) * r, colour)
   for (let k = 0; k < 6; k++) {
     const a = angle + (k / 6) * Math.PI * 2
@@ -339,7 +354,7 @@ const stroll: Draw = (c, m) => {
   const fast = /scurr|scamper|gallop|pounc|zigzag/i.test(m.word) ? 2.2 : 1
   const span = c.W + 18
   const x = ((m.t * WALK * fast) % span) - 16
-  const lift = /gallop/i.test(m.word) ? Math.floor(m.t / 200) % 2 : 0
+  const lift = /gallop/i.test(m.word) ? 2 * (Math.floor(m.t / 200) % 2) : 0  // a whole cell, eyes intact
   clawd(c, m.t, 'walk', x, 1, lift)
   for (let k = 0; k < c.W; k += 9) put(c, k + Math.floor(rnd(k, 1) * 5), GROUND - 1, 0x3d5a3a)  // grass tufts
   ground(c, 0x2d4a2b)
@@ -429,7 +444,7 @@ const space: Draw = (c, m, glyphs) => {
     if (streak) for (let tail = 1; tail < 4; tail++) put(c, x + tail, y, mix(0xdfe7ff, 0x1a1c24, tail / 4))
   }
   const at = along([{ x: START, stay: 1600, pose: 'stand' }, { x: spot(c.W, 0.5), stay: 1600, pose: 'stand' }], m.t, 'float')
-  const lift = 2 + Math.round(wave(m.t, 1600) * 2)
+  const lift = 2 + Math.round(wave(m.t, 1600)) * 2  // cell-aligned: the eyes keep their shape
   clawd(c, m.t, at.still ? 'cast' : 'float', at.x, at.facing, lift)
   // a little planet circles him
   const a = m.t / 500
