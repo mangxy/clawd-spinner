@@ -1,6 +1,9 @@
 // The frame: each spinner word's own scene, else its act's (a word a later build adds).
-import { ACTS, actFor, canvas, CLAWD_SPAN, DEF, ROWS, SIZE, type Draw, type Glyph, type Moment } from './acts'
+import { ACTS, actFor, canvas, CLAWD_SPAN, DEF, ROWS, SIZE, setSize, type Draw, type Glyph, type Moment } from './acts'
 import { SCENES } from './scenes'
+
+// the frame's measures travel with it: the test harness sizes Clawd from outside
+export { ROWS, setSize }
 
 type Cell = [number, number, number]
 

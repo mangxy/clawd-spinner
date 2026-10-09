@@ -169,12 +169,23 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const P = (i: number, yy: number, colour: number) => put(c, at(i), yy, colour)
   const shade = mix(CLAWD, 0x000000, 0.18)
   const pal: Record<string, number> = { C: CLAWD, E: blink ? CLAWD : 0x1a1410 }
-  body.art.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && pal[ch] !== undefined && P(i, y + j, pal[ch]!)))
+  const beat = Math.floor(t / 300) % 2
+  // middle's art has the arms built in — its arm row runs a cell wide of the
+  // eyes each side — so a raised arm leaves its tip painted where it hung:
+  // a ghost hand beside the one on his head. The shoulder cell (ab, and 1 on
+  // the left) stays; at middle it doubles as the body's edge. Large and small
+  // draw no arm cells of their own, so the skip touches nothing there
+  const raisedR = pose === 'cast' || pose === 'umbrella' || (pose === 'dance' && beat === 1) || (pose === 'hammer' && t % 700 < 450)
+  const raisedL = pose === 'dance' && beat === 0
+  body.art.forEach((row, j) => [...row].forEach((ch, i) => {
+    if (ch === '.' || pal[ch] === undefined) return
+    if (j === body.armY && ((i === ab + 1 && raisedR) || (i === 0 && raisedL))) return  // the arm has moved on
+    P(i, y + j, pal[ch]!)
+  }))
   ;[...body.art[body.art.length - 1]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length - 1, shade))
   const stepping = pose === 'walk' || pose === 'dance' || pose === 'carry' || pose === 'umbrella'
   ;[...body.legs[stepping ? (f >> 1) % 2 : 0]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length, shade))
   const armY = y + body.armY
-  const beat = Math.floor(t / 300) % 2
   const left: [number, number][] = pose === 'dance' && beat === 0 ? [[1, armY - 1], [0, armY - 2]] : [[1, armY], [0, armY]]
   let right: [number, number][] = [[ab, armY], [ab + 1, armY]]
   if (pose === 'cast' || (pose === 'dance' && beat === 1) || pose === 'umbrella') right = [[ab, armY - 1], [ab + 1, armY - 2]]
