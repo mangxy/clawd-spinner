@@ -9,9 +9,14 @@ import { lineFor } from './rocky'
 const FRAME_MS = 83  // ~12 frames a second
 
 // The act's continuity, kept by the host: a plugin reload starts the module
-// over, and without this the band goes blank, then flashes the first frame of
-// a restarted act — reading this back picks the act up where it stood
-const act = atom({ plugin: 'clawd-spinner', key: 'act' } as const, { word: '', turnAt: 0, force: null as string | null })
+// over — its heartbeat keeps beating, the engine has no unload event to stop
+// it — so several generations of the module end up painting at once, each from
+// its own half-remembered state, and the band flashes scenes at random. With
+// the state itself living here, every generation reads the same act and draws
+// the same frame; gen rises on each load and the older heartbeats see it move
+// and stop themselves
+const act = atom({ plugin: 'clawd-spinner', key: 'act' } as const, { word: '', turnAt: 0, force: null as string | null, gen: 0 })
+let myGen = 0  // the gen this module loaded under; a heartbeat reading another has been replaced
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 
@@ -39,15 +44,24 @@ const spin = {
   // (the 0.5.x home, where streaming text takes the row and Clawd with it).
   // Set from the manifest's userConfig, handed to register as `options`
   place: 'band' as 'band' | 'spinner',
-  turnAt: 0, word: '', talk: true, force: null as string | null,
+  talk: true,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
 }
 
-function moment(now: number): A.Moment {
-  const t = now - spin.turnAt
-  const n = Math.floor(spin.turnAt / 1000) + Math.floor(t / LINE_MS)
-  return { word: spin.word, t, line: spin.talk ? lineFor(spin.word, n) : undefined, lineT: t % LINE_MS }
+type ActState = { word: string; turnAt: number; force: string | null; gen: number }
+
+function moment(a: ActState, now: number): A.Moment {
+  const t = now - a.turnAt
+  const n = Math.floor(a.turnAt / 1000) + Math.floor(t / LINE_MS)
+  return { word: a.word, t, line: spin.talk ? lineFor(a.word, n) : undefined, lineT: t % LINE_MS }
+}
+
+/** The frame for the act as it stands: the act's scene if the word is in,
+ *  a blank stage holding the row's height while it isn't. */
+function cellsFor(a: ActState, columns: number, now: number) {
+  if (!a.word) return blankCells(columns)
+  return encode(frame(moment(a, now), columns))
 }
 
 /** A blank stage, the row's height held: drawn while no word has reached us —
@@ -59,14 +73,27 @@ function blankCells(columns: number) {
   return encode(u)
 }
 
+let heartbeats = 0
 async function paint($: EngineInterface) {
   const m = spin.mount
-  if (!m || !spin.working) return  // standing down (no turn running, or the row is gone)
+  if (!m) return  // standing down (the row is gone)
+  // a replaced module's heartbeat: it reads another generation's gen and stops.
+  // Its mounts are stale anyway — its blits fall to deny and it would only
+  // churn invalidate for as long as it ran
+  if (++heartbeats % 30 === 0) {
+    const a = await read($, act)
+    if (a.gen !== myGen) {
+      log($, 'paint gen-mismatch, heartbeat retiring')
+      timer?.cancel()
+      return
+    }
+  }
   if (!spin.blit && Date.now() - spin.denyAt > 2000) {
     spin.blit = true
     log($, 'paint blit-retry-after-deny')
   }
-  const cells = m ? (spin.word ? encode(frame(moment(Date.now()), m.columns)) : blankCells(m.columns)) : ''
+  const a = await read($, act)
+  const cells = cellsFor(a, m.columns, Date.now())
   if (cells === spin.last) {
     log($, 'paint same-cells skip')
     return
@@ -88,6 +115,8 @@ async function paint($: EngineInterface) {
   }
 }
 
+let timer: { cancel(): void } | null = null
+
 export const register: Register = (on, options) => {
   if (options?.place === 'band' || options?.place === 'spinner') spin.place = options.place
   if (options?.size === 'small' || options?.size === 'middle' || options?.size === 'large') setSize(options.size)
@@ -99,16 +128,16 @@ export const register: Register = (on, options) => {
       spin.talk = true
     }
     try {
-      const saved = await read($, act)
-      spin.word = saved.word
-      spin.turnAt = saved.turnAt
-      spin.force = saved.force
+      // this load's generation: the heartbeats of every older module see the
+      // rise and retire; ours carries the act on from where it stood
+      myGen = (await read($, act)).gen + 1
+      await update($, act, cur => ({ ...cur, gen: myGen }))
     } catch { /* a fresh session: nothing to pick up */ }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
     await $.command.register({ name: 'clawd-word', description: 'Act out a word of your choosing — no more waiting on the spinner to roll it (no arg: back to the real words)' })
     log($, 'session.start')
-    const tick = () => paint($)
-    $.clock.every(FRAME_MS, tick)
+    timer?.cancel()  // a hot reload's leftover from this module's last load, if any
+    timer = $.clock.every(FRAME_MS, () => void paint($))
     return next(e)
   })
 
@@ -154,11 +183,11 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'clawd-word' }, ($, e) => {
     const arg = String((e as any).args ?? '').trim()
-    spin.force = arg || null
-    if (arg) spin.word = arg
-    spin.turnAt = Date.now()  // the new act starts now, from its first frame
+    const force = arg || null
+    // the new act starts now, from its first frame — written to the atom, so
+    // whichever module's heartbeat paints next draws it
+    void update($, act, cur => ({ ...cur, force, word: arg || cur.word, turnAt: Date.now() })).catch(() => {})
     spin.last = ''
-    void update($, act, cur => ({ ...cur, force: spin.force, word: spin.word, turnAt: spin.turnAt })).catch(() => {})
     return { text: arg ? `Clawd acts out "${arg}" until you clear it: /clawd-word with no arg.` : 'Back to the real spinner words.' }
   })
 
@@ -170,13 +199,11 @@ export const register: Register = (on, options) => {
       // there would stand petrified the whole wait. The official spinner row
       // covers it; Clawd mounts on the first render after this point
       spin.working = true
-      spin.turnAt = Date.now()
-      // the new turn's word hasn't arrived yet; holding the last act's scene
-      // here is the flash — the one the eye catches when the reply begins and
-      // the scene cuts. The band goes quiet instead, and the new act opens it
-      spin.word = spin.force ?? ''
-      spin.last = ''  // a fresh act: don't let a same-cells frame skip the first paint
-      void update($, act, cur => ({ ...cur, turnAt: spin.turnAt, word: spin.word })).catch(() => {})
+      // The word and the clock stay as they are: commands fire this event too
+      // (a /reload-plugins among them) and never fire a turn.complete to
+      // close it, so anything set here would leak. The old act plays on
+      // seamlessly and the new word's arrival opens the new scene
+      spin.last = ''
       // the engine doesn't repaint the spinner row on its own once the hooks
       // finish — the row just sits there until the next token tick. One nudge
       // mounts Clawd the instant the freeze lifts
@@ -200,10 +227,14 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
-    // the word tells Clawd what to act out in either place
-    if (e.props.word && !spin.force) {
-      if (spin.word !== e.props.word) void update($, act, cur => ({ ...cur, word: e.props.word as string })).catch(() => {})
-      spin.word = e.props.word
+    // the word tells Clawd what to act out in either place. A new word opens
+    // its scene from its first frame; the same word is the same act, kept on
+    let word = e.props.word as string
+    const cur = await read($, act)
+    if (word && !cur.force && word !== cur.word) {
+      const now = Date.now()
+      await update($, act, s => ({ ...s, word, turnAt: now })).catch(() => {})
+      spin.last = ''
     }
     if (spin.place !== 'spinner') return official
     // idle means idle, all of it: the submit's renders still behind the prompt
@@ -218,12 +249,10 @@ export const register: Register = (on, options) => {
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (columns < 50) return official
-    const now = Date.now()
-    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn, before its first render
     const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
-    const cells = spin.word ? encode(frame(moment(now), columns)) : blankCells(columns)
+    const cells = cellsFor(await read($, act), columns, Date.now())
     spin.last = cells
     return (
       <Box flexDirection="column">
@@ -246,13 +275,12 @@ export const register: Register = (on, options) => {
     }
     const columns = (e.props.bodyColumns ?? 0) - EDGE
     if (columns < 50) return next(e)
-    const now = Date.now()
-    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn, before its first render
     const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
-    log($, `band take req=${String(e.requestId).slice(-4)} cols=${columns}`)
-    const cells = spin.word ? encode(frame(moment(now), columns)) : blankCells(columns)
+    const a = await read($, act)
+    const cells = cellsFor(a, columns, Date.now())
+    log($, `band take req=${String(e.requestId).slice(-4)} cols=${columns} word=${a.word || '(none)'}`)
     spin.last = cells
     return (
       <Box>

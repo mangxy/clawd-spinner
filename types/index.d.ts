@@ -11,6 +11,8 @@ declare module 'claude-code' {
         turnAt: number
         /** The /clawd-word override, or null following the real words. */
         force: string | null
+        /** Rises by one each load: an older module's heartbeat sees it move and stops itself. */
+        gen: number
       }
     }
   }
