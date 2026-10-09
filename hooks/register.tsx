@@ -33,7 +33,7 @@ const spin = {
   // (the 0.5.x home, where streaming text takes the row and Clawd with it).
   // Set from the manifest's userConfig, handed to register as `options`
   place: 'band' as 'band' | 'spinner',
-  turnAt: 0, word: '', talk: true,
+  turnAt: 0, word: '', talk: true, force: null as string | null,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
 }
@@ -93,6 +93,7 @@ export const register: Register = (on, options) => {
       spin.talk = true
     }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
+    await $.command.register({ name: 'clawd-word', description: 'Act out a word of your choosing — no more waiting on the spinner to roll it (no arg: back to the real words)' })
     log($, 'session.start')
     const tick = () => paint($)
     $.clock.every(FRAME_MS, tick)
@@ -139,6 +140,15 @@ export const register: Register = (on, options) => {
     }
   })
 
+  on('command.run', { command: 'clawd-word' }, ($, e) => {
+    const arg = String((e as any).args ?? '').trim()
+    spin.force = arg || null
+    if (arg) spin.word = arg
+    spin.turnAt = Date.now()  // the new act starts now, from its first frame
+    spin.last = ''
+    return { text: arg ? `Clawd acts out "${arg}" until you clear it: /clawd-word with no arg.` : 'Back to the real spinner words.' }
+  })
+
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
       log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
@@ -173,7 +183,7 @@ export const register: Register = (on, options) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
     // the word tells Clawd what to act out in either place
-    if (e.props.word) spin.word = e.props.word
+    if (e.props.word && !spin.force) spin.word = e.props.word
     if (spin.place !== 'spinner') return official
     // idle means idle, all of it: the submit's renders still behind the prompt
     // hooks, a reload's repaint, a resize, a freshly reloaded module with no
