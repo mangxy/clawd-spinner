@@ -98,14 +98,18 @@ const BODIES: Record<Size, Body> = {
     armY: 2, span: 15,
   },
   middle: {
+    // Clawd-tales' 9-wide build: eyes are tall bars whose two pixels share a
+    // cell (a small square, half of large's cross-cell bar), arms hug the body
+    // row, legs spaced evenly one pixel apart
     art: [
-      '..CCCCCC..',
-      '..CECCEC..',
-      '..CECCEC..',
-      '..CCCCCC..',
+      '.CCCCCCC.',
+      '.CECCECC.',
+      'CCECCECCC',
+      '.CCCCCCC.',
+      '.CCCCCCC.',
     ],
-    legs: ['..C.CC.C.', '...CCCC..'],
-    armY: 2, span: 11,
+    legs: ['.C.C.C.C.', '..C.C.C.C'],
+    armY: 2, span: 10,
   },
   small: {
     art: [
@@ -169,8 +173,10 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const hand: [number, number] = [at(hi), hy]
   if (pose !== 'stand' && pose !== 'cast') return { hand, tip: null }
   const wood = 0x7a4a24
-  P(hi + 1, hy - 1, wood); P(hi + 2, hy - 2, wood)
-  const tip: [number, number] = [at(hi + 3), hy - 3]
+  // the staff shrinks with him: three paces of wood at large, two at middle, one at small
+  const reach = SIZE === 'large' ? 3 : SIZE === 'middle' ? 2 : 1
+  for (let k = 1; k <= reach; k++) P(hi + k, hy - k, wood)
+  const tip: [number, number] = [at(hi + reach + 1), hy - reach - 1]
   if (pose === 'cast' || f % 14 < 7) put(c, tip[0], tip[1], SPARKS[f % SPARKS.length]!)
   return { hand, tip }
 }

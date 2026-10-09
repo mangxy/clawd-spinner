@@ -44,6 +44,15 @@ function moment(now: number): A.Moment {
   return { word: spin.word, t, line: spin.talk ? lineFor(spin.word, n) : undefined, lineT: t % LINE_MS }
 }
 
+/** A blank stage, the row's height held: drawn while no word has reached us —
+ *  the first frames after a plugin reload, before the Spinner's next render
+ *  hands the word back. Drawing the act there would flash a wrong scene. */
+function blankCells(columns: number) {
+  const u = new Uint32Array(columns * A.ROWS * 3)
+  for (let i = 0; i < u.length; i += 3) { u[i] = 0x20; u[i + 1] = A.DEF; u[i + 2] = A.DEF }
+  return encode(u)
+}
+
 async function paint($: EngineInterface) {
   const m = spin.mount
   if (!m || !spin.working) return  // standing down (no turn running, or the row is gone)
@@ -51,7 +60,7 @@ async function paint($: EngineInterface) {
     spin.blit = true
     log($, 'paint blit-retry-after-deny')
   }
-  const cells = encode(frame(moment(Date.now()), m.columns))
+  const cells = m ? (spin.word ? encode(frame(moment(Date.now()), m.columns)) : blankCells(m.columns)) : ''
   if (cells === spin.last) {
     log($, 'paint same-cells skip')
     return
@@ -183,7 +192,7 @@ export const register: Register = (on, options) => {
     const { Raster, Box } = $.ui.resolve(e)
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
-    const cells = encode(frame(moment(now), columns))
+    const cells = spin.word ? encode(frame(moment(now), columns)) : blankCells(columns)
     spin.last = cells
     return (
       <Box flexDirection="column">
@@ -212,7 +221,7 @@ export const register: Register = (on, options) => {
     if (spin.mount?.requestId !== e.requestId) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
     log($, `band take req=${String(e.requestId).slice(-4)} cols=${columns}`)
-    const cells = encode(frame(moment(now), columns))
+    const cells = spin.word ? encode(frame(moment(now), columns)) : blankCells(columns)
     spin.last = cells
     return (
       <Box>
