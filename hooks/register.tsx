@@ -232,9 +232,18 @@ export const register: Register = (on, options) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
     // the word tells Clawd what to act out in either place. A new word opens
-    // its scene from its first frame; the same word is the same act, kept on
+    // its scene from its first frame; the same word is the same act, kept on.
+    // The catch: a read on a freshly started host can throw before the value
+    // exists — an unguarded one kills this hook outright and the word never
+    // reaches Clawd again, the band left holding a blank stage
     let word = e.props.word as string
-    const cur = await read($, act)
+    let cur: ActState
+    try {
+      cur = await read($, act)
+    } catch {
+      cur = { word: '', turnAt: 0, force: null, gen: 0 }
+    }
+    log($, `spinner-feed word=${word || '(none)'} cur=${cur.word || '(none)'} force=${String(cur.force)}`)
     if (word && !cur.force && word !== cur.word) {
       const now = Date.now()
       await update($, act, s => ({ ...s, word, turnAt: now })).catch(() => {})
