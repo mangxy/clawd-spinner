@@ -311,7 +311,12 @@ export const register: Register = (on, options) => {
   // ours to keep: the clock's paint() blits into the mount below.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (spin.place !== 'band') return next(e)
-    if (e.surface !== 'terminal' || e.props.hasSurvey || !e.props.isWorking) {
+    // isWorking alone is not the turn: a command's busy blink (a /reload-plugins,
+    // a plugin hot-reload's repaint) turns it on with no turn started, and the
+    // band would open on the act's stale word — the reload flash. spin.working
+    // follows the turn itself (turn.start set it, turn.complete cleared it), the
+    // same gate the spinner row's render has always had
+    if (e.surface !== 'terminal' || e.props.hasSurvey || !e.props.isWorking || !spin.working) {
       spin.mount = null  // the band is folded away: nothing mounted to repaint
       return next(e)
     }
