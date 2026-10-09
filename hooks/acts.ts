@@ -175,7 +175,7 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   // a ghost hand beside the one on his head. The shoulder cell (ab, and 1 on
   // the left) stays; at middle it doubles as the body's edge. Large and small
   // draw no arm cells of their own, so the skip touches nothing there
-  const raisedR = pose === 'cast' || pose === 'umbrella' || pose === 'crank' || pose === 'hammer' || (pose === 'dance' && beat === 1)
+  const raisedR = pose === 'cast' || pose === 'umbrella' || pose === 'hammer' || (pose === 'dance' && beat === 1)
   const raisedL = pose === 'dance' && beat === 0
   body.art.forEach((row, j) => [...row].forEach((ch, i) => {
     if (ch === '.' || pal[ch] === undefined) return
@@ -186,11 +186,19 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const stepping = pose === 'walk' || pose === 'dance' || pose === 'carry' || pose === 'umbrella'
   ;[...body.legs[stepping ? (f >> 1) % 2 : 0]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length, shade))
   const armY = y + body.armY
+  // the crank's hand rides a one-cell circle around the arm tip: at the far
+  // side it folds back onto the shoulder, above and below it stands half a
+  // cell out — with the tip cell skipped (raisedR above) those halves were
+  // all the arm had, a hand thinned to a sliver with a gap where the elbow
+  // should be, and at the fold the arm read one cell short. Crank keeps the
+  // tip cell painted throughout: elbow as the hand passes, the hanging arm
+  // itself when the hand stands on the shoulder. No skip of its own
+  const crankAt = pose === 'crank' ? ([ab + 1 + Math.round(Math.cos(t / 250)), armY + Math.round(Math.sin(t / 250))] as const) : null
   const left: [number, number][] = pose === 'dance' && beat === 0 ? [[1, armY - 1], [0, armY - 2]] : [[1, armY], [0, armY]]
   let right: [number, number][] = [[ab, armY], [ab + 1, armY]]
   if (pose === 'cast' || (pose === 'dance' && beat === 1) || pose === 'umbrella') right = [[ab, armY - 1], [ab + 1, armY - 2]]
   if (pose === 'hammer') right = t % 700 < 450 ? [[ab, armY - 1], [ab + 1, armY - 2]] : [[ab, armY], [ab + 1, armY + 1]]
-  if (pose === 'crank') right = [[ab, armY], [ab + 1 + Math.round(Math.cos(t / 250)), armY + Math.round(Math.sin(t / 250))]]
+  if (crankAt) right = [[ab, armY], [crankAt[0], crankAt[1]]]
   // pan/water/carry stretch the paw two cells out; at middle that arm outgrew
   // the left one — held at two like the rest, the props hang off the hand the same
   for (const [i, yy] of [...left, ...right]) P(i, yy, CLAWD)
