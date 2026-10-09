@@ -20,7 +20,10 @@ let myGen = 0  // the gen this module loaded under; a heartbeat reading another 
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 
-const LOG = '/tmp/clawd-probe.log'
+// a file per module load: the generations a reload leaves behind all append to
+// one file otherwise, and their read-then-write flushes overwrite each other's
+// lines — the newest generation's evidence eaten before it is ever seen
+const LOG = `/tmp/clawd-probe.${String(Date.now()).slice(-6)}.log`
 let buf = ''
 let lastFlush = 0
 function log($: EngineInterface, s: string) {
@@ -230,6 +233,10 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
+    // logged before the surface check: the band mode needs this hook only as
+    // the word's way in, and a non-terminal render is still that signal's
+    // chance to arrive — its evidence belongs in the log either way
+    log($, `spinner-fire surface=${e.surface} word=${String(e.props.word ?? '')}`)
     if (e.surface !== 'terminal') return official
     // the word tells Clawd what to act out in either place. A new word opens
     // its scene from its first frame; the same word is the same act, kept on.
