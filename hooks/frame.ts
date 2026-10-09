@@ -1,5 +1,5 @@
 // The frame: each spinner word's own scene, else its act's (a word a later build adds).
-import { ACTS, actFor, canvas, DEF, ROWS, type Draw, type Glyph, type Moment } from './acts'
+import { ACTS, actFor, canvas, CLAWD_SPAN, DEF, ROWS, SIZE, type Draw, type Glyph, type Moment } from './acts'
 import { SCENES } from './scenes'
 
 type Cell = [number, number, number]
@@ -41,37 +41,46 @@ const SPEECH = 0xd97757
 const TYPE_MS = 35  // one letter every 35ms as a new line starts
 
 /**
- * Clawd's speech bubble, three cell rows above and beside his head, with a tail down to him: to his
- * right when it fits, else to his left; the text is cut to fit the row. It follows him as he moves.
+ * Clawd's speech bubble above and beside his head, with a tail down to him: to his
+ * right when it fits, else to his left; the text is cut to fit the row. It follows him
+ * as he moves. Three cells tall at large, two at middle, one bare line at small.
  */
 function bubble(cells: Cell[], columns: number, at: { x: number; y: number }, line: string, lineT: number) {
   const headRow = Math.floor(at.y / 2)
-  const top = Math.max(0, headRow - 4)
-  const room = Math.max(at.x - 2, columns - (at.x + 15) - 1)
+  const top = Math.max(0, headRow - (SIZE === 'small' ? 2 : SIZE === 'middle' ? 3 : 4))
+  const room = Math.max(at.x - 2, columns - (at.x + CLAWD_SPAN) - 1)
   const text = line.slice(0, Math.max(0, room - 4)).slice(0, Math.floor(lineT / TYPE_MS) + 1)
   if (room < 8 || !text) return
   const width = Math.min(line.length, room - 4) + 4
-  const right = at.x + 15 + width <= columns
-  const x0 = right ? at.x + 15 : Math.max(0, at.x - width - 1)
+  const right = at.x + CLAWD_SPAN + width <= columns
+  const x0 = right ? at.x + CLAWD_SPAN : Math.max(0, at.x - width - 1)
   const set = (x: number, row: number, ch: string, fg: number) => {
     if (x >= 0 && x < columns && row >= 0 && row < ROWS) cells[row * columns + x] = [ch.codePointAt(0)!, fg, DEF]
+  }
+  if (SIZE === 'small') {  // one bare line of speech, no box to spend
+    for (let i = 0; i < text.length + 2; i++) set(x0 + i, top, i === 0 ? '╴' : i === text.length + 1 ? '╶' : text[i - 1]!, SPEECH)
+    if (right) set(x0 - 1, top + 1, '╱', EDGE_GREY)
+    else set(x0 + text.length + 2, top + 1, '╲', EDGE_GREY)
+    return
   }
   const inner = width - 2
   set(x0, top, '╭', EDGE_GREY)
   set(x0 + width - 1, top, '╮', EDGE_GREY)
-  set(x0, top + 1, '│', EDGE_GREY)
-  set(x0 + width - 1, top + 1, '│', EDGE_GREY)
-  set(x0, top + 2, '╰', EDGE_GREY)
-  set(x0 + width - 1, top + 2, '╯', EDGE_GREY)
+  if (SIZE === 'large') {
+    set(x0, top + 1, '│', EDGE_GREY)
+    set(x0 + width - 1, top + 1, '│', EDGE_GREY)
+  }
+  set(x0, top + (SIZE === 'large' ? 2 : 1), '╰', EDGE_GREY)
+  set(x0 + width - 1, top + (SIZE === 'large' ? 2 : 1), '╯', EDGE_GREY)
   for (let i = 1; i <= inner; i++) {
     set(x0 + i, top, '─', EDGE_GREY)
-    set(x0 + i, top + 2, '─', EDGE_GREY)
+    set(x0 + i, top + (SIZE === 'large' ? 2 : 1), '─', EDGE_GREY)
     const ch = text[i - 2]
-    set(x0 + i, top + 1, i >= 2 && ch ? ch : ' ', SPEECH)
+    set(x0 + i, top + (SIZE === 'large' ? 1 : 0), i >= 2 && ch ? ch : ' ', SPEECH)
   }
   // the tail, from the bubble's corner nearest him down toward his head
-  if (right) set(x0 - 1, top + 3, '╱', EDGE_GREY)
-  else set(x0 + width, top + 3, '╲', EDGE_GREY)
+  if (right) set(x0 - 1, top + (SIZE === 'large' ? 3 : 2), '╱', EDGE_GREY)
+  else set(x0 + width, top + (SIZE === 'large' ? 3 : 2), '╲', EDGE_GREY)
 }
 
 /** Base64 of the cells, as RasterProps.cells wants them. */

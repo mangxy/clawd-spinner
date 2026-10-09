@@ -1,4 +1,4 @@
-import { CLAWD, CLAWD_TOP, DEF, GROUND, SPARKS, along, canvas, clawd, ground, mix, put, rect, rnd, spot, sprite, wave, type Canvas, type Draw } from '../acts'
+import { CLAWD, CLAWD_TOP, DEF, GROUND, PH, SPARKS, along, canvas, clawd, ground, mix, put, rect, rnd, spot, sprite, wave, type Canvas, type Draw } from '../acts'
 
 // Words: Beaming, Boogieing, Burrowing, Cerebrating, Cogitating, Contemplating, Cultivating, Doing, Embellishing, Flambéing, Forming, Generating, Harmonizing, Hyperspacing, Infusing, Leavening, Metamorphosing, Mustering, Onioning, Perusing, Pontificating, Propagating, Recombobulating, Schlepping, Skedaddling, Spinning, Symbioting, Tomfoolering, Undulating, Warping, Working
 
@@ -650,14 +650,13 @@ const undulating: Draw = (c, m) => {
   disc(c, spot(c.W, 0.85), 4, 3, 0xffd54f)
   for (let x = 0; x < c.W; x++) {
     const s = Math.round(surf(x))
-    for (let y = s; y < PH_ROWS; y++) put(c, x, y, y === s ? 0xe8f4ff : mix(0x4fa3d9, 0x1f3a6a, (y - s) / 8))
+    for (let y = s; y < PH; y++) put(c, x, y, y === s ? 0xe8f4ff : mix(0x4fa3d9, 0x1f3a6a, (y - s) / 8))
   }
   const sy = Math.round(surf(cx))
   const slope = surf(cx + 4) - surf(cx - 4)
   for (let i = -7; i <= 7; i++) put(c, cx + i, sy + Math.round((slope * i) / 8), Math.abs(i) < 2 ? 0xffffff : 0xff9e3d)
-  clawd(c, m.t, 'float', cx - 7, 1, PH_ROWS - 1 - sy)
+  clawd(c, m.t, 'float', cx - 7, 1, PH - 1 - sy)
 }
-const PH_ROWS = 16
 
 const warping: Draw = (c, m) => {
   const T = m.t % 4800

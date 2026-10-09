@@ -10,10 +10,15 @@ export type Moment = {
   lineT?: number  // ms since that line began: it types itself out
 }
 
-export const ROWS = 8
-export const PH = ROWS * 2
+export type Size = 'small' | 'middle' | 'large'
+
+// The stage's height follows the size: large is the 0.5.x stage, middle and small cut it down.
+// Live bindings: the scenes read GROUND and CLAWD_TOP as they draw, so one setSize() rescales them all.
+export let ROWS = 8
+export let PH = ROWS * 2
 export const DEF = 0x01000000  // the terminal's own colour: transparent here
-export const GROUND = PH - 1
+export let GROUND = PH - 1
+const ROWS_FOR: Record<Size, number> = { small: 4, middle: 6, large: 8 }
 
 // ------------------------------------------------------------------ which act
 
@@ -76,22 +81,66 @@ export const wave = (t: number, period: number, phase = 0) => (Math.sin((t / per
 
 export const CLAWD = 0xd97757
 export const SPARKS = [0xff4b3e, 0xffd54f, 0xdfe7ff, 0xff9e3d]
-const CLAWD_ART = [
-  '..CCCCCCCCCC..',
-  '..CCECCCCECC..',
-  '..CCECCCCECC..',
-  '..CCCCCCCCCC..',
-  '..CCCCCCCCCC..',
-]
-const LEGS = ['..C.C....C.C..', '...C.C..C.C...']
-export const CLAWD_TOP = GROUND - CLAWD_ART.length - 1
+
+// Three bodies drawn each by hand: downsampling mangles him (the 10-06 crab case), so the
+// smaller sizes are their own art, their own legs, and arms scaled to their own width.
+type Body = { art: string[]; legs: string[]; armY: number; span: number }  // armY: rows below his top; span: cells wide + 1, the bubble's offset
+const BODIES: Record<Size, Body> = {
+  large: {
+    art: [
+      '..CCCCCCCCCC..',
+      '..CCECCCCECC..',
+      '..CCECCCCECC..',
+      '..CCCCCCCCCC..',
+      '..CCCCCCCCCC..',
+    ],
+    legs: ['..C.C....C.C..', '...C.C..C.C...'],
+    armY: 2, span: 15,
+  },
+  middle: {
+    art: [
+      '..CCCCCC..',
+      '.CECCCCEC.',
+      '.CECCCCEC.',
+      '.CCCCCCCC.',
+    ],
+    legs: ['.C.C..C.C.', '..C.C..C.C'],
+    armY: 2, span: 11,
+  },
+  small: {
+    art: [
+      '.CCCCC.',
+      '.CECEC.',
+      '.CCCCC.',
+    ],
+    legs: ['C...C..', '.C.C...'],
+    armY: 1, span: 8,
+  },
+}
+
+export let SIZE: Size = 'large'
+export let CLAWD_TOP = GROUND - BODIES.large.art.length - 1
+export let CLAWD_SPAN = BODIES.large.span
 export const START = 3
+
+export function setSize(s: Size) {
+  SIZE = s
+  const { art, span } = BODIES[s]!
+  ROWS = ROWS_FOR[s]!
+  PH = ROWS * 2
+  GROUND = PH - 1
+  CLAWD_TOP = GROUND - art.length - 1
+  CLAWD_SPAN = span
+}
 
 export type Pose = 'stand' | 'cast' | 'walk' | 'pan' | 'hammer' | 'crank' | 'dance' | 'carry' | 'water' | 'umbrella' | 'float'
 export type Hands = { hand: [number, number]; tip: [number, number] | null }
 
 /** Clawd (no hat here) at x, facing right (1) or left (-1), lifted `lift` pixels. */
 export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -1 = 1, lift = 0): Hands {
+  const body = BODIES[SIZE]!
+  const W = body.art[0]!.length
+  const ab = W - 2  // his right arm's first column (the shoulder one inside the body)
   const f = Math.floor(t / 83)
   const blink = f % 47 < 2
   const ox = Math.round(x)
@@ -99,22 +148,22 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   const breathe = (pose === 'stand' || pose === 'cast') && Math.floor(t / 700) % 2 ? 1 : 0
   const y = CLAWD_TOP + hop + breathe - lift
   c.clawdAt = { x: ox, y }
-  const at = (i: number) => (facing > 0 ? ox + i : ox + 13 - i)
+  const at = (i: number) => (facing > 0 ? ox + i : ox + W - 1 - i)
   const P = (i: number, yy: number, colour: number) => put(c, at(i), yy, colour)
   const shade = mix(CLAWD, 0x000000, 0.18)
   const pal: Record<string, number> = { C: CLAWD, E: blink ? CLAWD : 0x1a1410 }
-  CLAWD_ART.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && pal[ch] !== undefined && P(i, y + j, pal[ch]!)))
-  for (let i = 2; i < 12; i++) P(i, y + 4, shade)
+  body.art.forEach((row, j) => [...row].forEach((ch, i) => ch !== '.' && pal[ch] !== undefined && P(i, y + j, pal[ch]!)))
+  for (let i = 1; i < W - 1; i++) P(i, y + body.art.length - 1, shade)
   const stepping = pose === 'walk' || pose === 'dance' || pose === 'carry' || pose === 'umbrella'
-  ;[...LEGS[stepping ? (f >> 1) % 2 : 0]!].forEach((ch, i) => ch === 'C' && P(i, CLAWD_TOP + CLAWD_ART.length + hop - lift, shade))
-  const armY = y + 2
+  ;[...body.legs[stepping ? (f >> 1) % 2 : 0]!].forEach((ch, i) => ch === 'C' && P(i, y + body.art.length, shade))
+  const armY = y + body.armY
   const beat = Math.floor(t / 300) % 2
   const left: [number, number][] = pose === 'dance' && beat === 0 ? [[1, armY - 1], [0, armY - 2]] : [[1, armY], [0, armY]]
-  let right: [number, number][] = [[12, armY], [13, armY]]
-  if (pose === 'cast' || (pose === 'dance' && beat === 1) || pose === 'umbrella') right = [[12, armY - 1], [13, armY - 2]]
-  if (pose === 'hammer') right = t % 700 < 450 ? [[12, armY - 1], [13, armY - 2]] : [[12, armY], [13, armY + 1]]
-  if (pose === 'crank') right = [[12, armY], [13 + Math.round(Math.cos(t / 250)), armY + Math.round(Math.sin(t / 250))]]
-  if (pose === 'pan' || pose === 'water' || pose === 'carry') right = [[12, armY], [13, armY], [14, armY]]
+  let right: [number, number][] = [[ab, armY], [ab + 1, armY]]
+  if (pose === 'cast' || (pose === 'dance' && beat === 1) || pose === 'umbrella') right = [[ab, armY - 1], [ab + 1, armY - 2]]
+  if (pose === 'hammer') right = t % 700 < 450 ? [[ab, armY - 1], [ab + 1, armY - 2]] : [[ab, armY], [ab + 1, armY + 1]]
+  if (pose === 'crank') right = [[ab, armY], [ab + 1 + Math.round(Math.cos(t / 250)), armY + Math.round(Math.sin(t / 250))]]
+  if (pose === 'pan' || pose === 'water' || pose === 'carry') right = [[ab, armY], [ab + 1, armY], [ab + 2, armY]]
   for (const [i, yy] of [...left, ...right]) P(i, yy, CLAWD)
   const [hi, hy] = right[right.length - 1]!
   const hand: [number, number] = [at(hi), hy]

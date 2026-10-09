@@ -1,6 +1,7 @@
 import type { EngineInterface, Register } from 'claude-code'
 
 import * as A from './acts'
+import { setSize } from './acts'
 import { encode, frame } from './frame'
 import { lineFor } from './rocky'
 
@@ -74,6 +75,7 @@ async function paint($: EngineInterface) {
 
 export const register: Register = (on, options) => {
   if (options?.place === 'band' || options?.place === 'spinner') spin.place = options.place
+  if (options?.size === 'small' || options?.size === 'middle' || options?.size === 'large') setSize(options.size)
   on('session.start', async ($, e, next) => {
     if (!e.isInteractive) return next(e)
     try {
