@@ -234,6 +234,15 @@ export const register: Register = (on, options) => {
   on('turn.complete', ($, e, next) => {
     if (!e.agentId) {
       log($, 'turn.complete')
+      // a blit outlives the fold in the engine's tree: a redraw it does on its
+      // own — a command turn's busy band opening for a blink, /reload-plugins
+      // among them — replays the last cells it holds, and Clawd flashes on a
+      // screen no hook of ours was asked to draw. Blank the mount first, so
+      // what replays is an empty stage
+      if (spin.mount) {
+        void $.ui.blit({ requestId: spin.mount.requestId, key: 'act', cells: blankCells(spin.mount.columns) })
+          .catch(e => log($, `blank-blit-throw ${String(e)}`))
+      }
       // fold the act away for good — no mid-turn stop revival past this point
       ;[spin.working, spin.mount] = [false, null]
       // on the band isWorking has just turned, but the engine won't repaint it
