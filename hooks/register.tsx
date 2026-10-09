@@ -50,6 +50,11 @@ const spin = {
   talk: true,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
+  // the word a render handed over, waiting for the heartbeat to write: the
+  // engine refuses a state write from inside a render (a write redraws, a
+  // redraw writes — the loop it guards against), so the Spinner hook only
+  // takes the note and paint(), off the clock, commits it
+  pending: null as { word: string; at: number } | null,
 }
 
 type ActState = { word: string; turnAt: number; force: string | null; gen: number }
@@ -78,6 +83,13 @@ function blankCells(columns: number) {
 
 let heartbeats = 0
 async function paint($: EngineInterface) {
+  const p = spin.pending
+  if (p) {
+    spin.pending = null
+    await update($, act, s => ({ ...s, word: p.word, turnAt: p.at })).catch(
+      e => log($, `update-throw ${String(e)}`))
+    spin.last = ''
+  }
   const m = spin.mount
   if (!m) return  // standing down (the row is gone)
   // a replaced module's heartbeat: it reads another generation's gen and stops.
@@ -252,9 +264,10 @@ export const register: Register = (on, options) => {
     }
     log($, `spinner-feed word=${word || '(none)'} cur=${cur.word || '(none)'} force=${String(cur.force)}`)
     if (word && !cur.force && word !== cur.word) {
-      const now = Date.now()
-      await update($, act, s => ({ ...s, word, turnAt: now })).catch(() => {})
-      spin.last = ''
+      // no write here: the engine refuses state writes from inside a render.
+      // The note is plain memory; the heartbeat's paint() commits it off the
+      // clock, within one frame of the word's arrival
+      spin.pending = { word, at: Date.now() }
     }
     if (spin.place !== 'spinner') return official
     // idle means idle, all of it: the submit's renders still behind the prompt
