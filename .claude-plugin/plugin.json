@@ -1,7 +1,7 @@
 {
   "name": "clawd-spinner",
-  "version": "0.6.0",
-  "description": "Clawd acts out the spinner's word above it while Claude works: cooking for Saut\u00e9ing, dancing for Vibing, pacing for Pondering, a scene of its own for every one of the 189 spinner words. Uses none of your usage: everything is animated locally, no model calls.",
+  "version": "0.6.1",
+  "description": "Clawd acts out the spinner's word above it while Claude works: cooking for Sautéing, dancing for Vibing, pacing for Pondering, a scene of its own for every one of the 189 spinner words. Uses none of your usage: everything is animated locally, no model calls.",
   "author": {
     "name": "Sai Rudra"
   },
@@ -9,5 +9,17 @@
   "homepage": "https://github.com/saiharsha03/clawd-spinner",
   "repository": "https://github.com/saiharsha03/clawd-spinner",
   "license": "MIT",
-  "icon": "./icon.png"
+  "icon": "./icon.png",
+  "userConfig": {
+    "place": {
+      "type": "string",
+      "title": "Clawd's home",
+      "description": "Where Clawd acts out: the band above the prompt (never taken away for text, fold with its [-]) or the spinner row beside the word (he stands down while text streams there).",
+      "default": "band",
+      "options": [
+        "band",
+        "spinner"
+      ]
+    }
+  }
 }

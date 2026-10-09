@@ -29,7 +29,8 @@ function log($: EngineInterface, s: string) {
 const spin = {
   // where Clawd acts out: the band above the prompt (default — the engine never
   // takes that row away, and it carries its own [-] fold) or the spinner row
-  // (the 0.5.x home, where streaming text takes the row and Clawd with it)
+  // (the 0.5.x home, where streaming text takes the row and Clawd with it).
+  // Set from the manifest's userConfig, handed to register as `options`
   place: 'band' as 'band' | 'spinner',
   turnAt: 0, word: '', talk: true,
   last: '', blit: true, denyAt: 0, working: false,
@@ -71,18 +72,16 @@ async function paint($: EngineInterface) {
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  if (options?.place === 'band' || options?.place === 'spinner') spin.place = options.place
   on('session.start', async ($, e, next) => {
     if (!e.isInteractive) return next(e)
     try {
       spin.talk = (await $.store.get('talk')) !== false
-      const place = await $.store.get('place')
-      if (place === 'band' || place === 'spinner') spin.place = place
     } catch {
       spin.talk = true
     }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
-    await $.command.register({ name: 'clawd-place', description: 'Move Clawd between the band above the prompt and the spinner row' })
     log($, 'session.start')
     const tick = () => paint($)
     $.clock.every(FRAME_MS, tick)
@@ -99,26 +98,6 @@ export const register: Register = on => {
     }
     spin.last = ''
     return { text: spin.talk ? 'Clawd talks again. Hello hello!' : 'Clawd is quiet now. /clawd-talk brings his voice back.' }
-  })
-
-  // /clawd-place moves Clawd; /clawd-place band or /clawd-place spinner sets it.
-  on('command.run', { command: 'clawd-place' }, async ($, e) => {
-    const arg = String((e as any).args ?? '').trim().toLowerCase()
-    if (arg === 'band' || arg === 'spinner') spin.place = arg
-    else spin.place = spin.place === 'band' ? 'spinner' : 'band'
-    try {
-      await $.store.set('place', spin.place)
-    } catch {
-      // kept for this session only
-    }
-    spin.mount = null  // the old row's blit anchor is void now
-    spin.last = ''
-    $.ui.invalidate('ui.render')  // wake the row Clawd just moved to
-    return {
-      text: spin.place === 'band'
-        ? 'Clawd takes the band above the prompt. Fold him with the [-] when he crowds you.'
-        : 'Clawd squeezes back onto the spinner row, standing down while text streams. /clawd-place band brings him up.',
-    }
   })
 
   on('turn.step', async function* ($, e, next) {
