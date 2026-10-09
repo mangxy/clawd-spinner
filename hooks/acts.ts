@@ -175,7 +175,7 @@ export function clawd(c: Canvas, t: number, pose: Pose, x: number, facing: 1 | -
   // a ghost hand beside the one on his head. The shoulder cell (ab, and 1 on
   // the left) stays; at middle it doubles as the body's edge. Large and small
   // draw no arm cells of their own, so the skip touches nothing there
-  const raisedR = pose === 'cast' || pose === 'umbrella' || (pose === 'dance' && beat === 1) || (pose === 'hammer' && t % 700 < 450)
+  const raisedR = pose === 'cast' || pose === 'umbrella' || pose === 'crank' || pose === 'hammer' || (pose === 'dance' && beat === 1)
   const raisedL = pose === 'dance' && beat === 0
   body.art.forEach((row, j) => [...row].forEach((ch, i) => {
     if (ch === '.' || pal[ch] === undefined) return
