@@ -129,8 +129,12 @@ export const register: Register = (on, options) => {
     }
     try {
       // this load's generation: the heartbeats of every older module see the
-      // rise and retire; ours carries the act on from where it stood
-      myGen = (await read($, act)).gen + 1
+      // rise and retire; ours carries the act on from where it stood. The
+      // finite check: an act saved before gen existed reads undefined, and
+      // undefined + 1 is NaN — and NaN !== NaN retires every generation,
+      // heartbeats included, freezing Clawd mid-scene
+      const g = (await read($, act)).gen
+      myGen = (Number.isFinite(g) ? g : 0) + 1
       await update($, act, cur => ({ ...cur, gen: myGen }))
     } catch { /* a fresh session: nothing to pick up */ }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
