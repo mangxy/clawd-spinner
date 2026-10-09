@@ -27,6 +27,10 @@ function log($: EngineInterface, s: string) {
 }
 
 const spin = {
+  // where Clawd acts out: the band above the prompt (default — the engine never
+  // takes that row away, and it carries its own [-] fold) or the spinner row
+  // (the 0.5.x home, where streaming text takes the row and Clawd with it)
+  place: 'band' as 'band' | 'spinner',
   turnAt: 0, word: '', talk: true,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
@@ -72,10 +76,13 @@ export const register: Register = on => {
     if (!e.isInteractive) return next(e)
     try {
       spin.talk = (await $.store.get('talk')) !== false
+      const place = await $.store.get('place')
+      if (place === 'band' || place === 'spinner') spin.place = place
     } catch {
       spin.talk = true
     }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
+    await $.command.register({ name: 'clawd-place', description: 'Move Clawd between the band above the prompt and the spinner row' })
     log($, 'session.start')
     const tick = () => paint($)
     $.clock.every(FRAME_MS, tick)
@@ -94,6 +101,26 @@ export const register: Register = on => {
     return { text: spin.talk ? 'Clawd talks again. Hello hello!' : 'Clawd is quiet now. /clawd-talk brings his voice back.' }
   })
 
+  // /clawd-place moves Clawd; /clawd-place band or /clawd-place spinner sets it.
+  on('command.run', { command: 'clawd-place' }, async ($, e) => {
+    const arg = String((e as any).args ?? '').trim().toLowerCase()
+    if (arg === 'band' || arg === 'spinner') spin.place = arg
+    else spin.place = spin.place === 'band' ? 'spinner' : 'band'
+    try {
+      await $.store.set('place', spin.place)
+    } catch {
+      // kept for this session only
+    }
+    spin.mount = null  // the old row's blit anchor is void now
+    spin.last = ''
+    $.ui.invalidate('ui.render')  // wake the row Clawd just moved to
+    return {
+      text: spin.place === 'band'
+        ? 'Clawd takes the band above the prompt. Fold him with the [-] when he crowds you.'
+        : 'Clawd squeezes back onto the spinner row, standing down while text streams. /clawd-place band brings him up.',
+    }
+  })
+
   on('turn.step', async function* ($, e, next) {
     if (e.agentId) {
       yield* next(e)
@@ -108,10 +135,12 @@ export const register: Register = on => {
       // every API request's stream ends in a stop chunk, but stopReason tells
       // the two apart: tool_use pauses mean more work is coming (the act keeps
       // running through them), end_turn is the loop's exit — fold right there,
-      // before the engine's tail redraws, so no takeover frame flashes
+      // before the engine's tail redraws, so no takeover frame flashes.
+      // On the band the engine's own isWorking folds it; this is the spinner
+      // row's exit only
       if (chunk.kind === 'stop') {
         log($, `stop reason=${chunk.stopReason}`)
-        if (chunk.stopReason === 'end_turn') {
+        if (chunk.stopReason === 'end_turn' && spin.place === 'spinner') {
           log($, 'end_turn → fold')
           ;[spin.working, spin.mount] = [false, null]
         }
@@ -129,6 +158,7 @@ export const register: Register = on => {
       // covers it; Clawd mounts on the first render after this point
       spin.working = true
       spin.turnAt = Date.now()
+      spin.last = ''  // a fresh act: don't let a same-cells frame skip the first paint
       // the engine doesn't repaint the spinner row on its own once the hooks
       // finish — the row just sits there until the next token tick. One nudge
       // mounts Clawd the instant the freeze lifts
@@ -142,6 +172,9 @@ export const register: Register = on => {
       log($, 'turn.complete')
       // fold the act away for good — no mid-turn stop revival past this point
       ;[spin.working, spin.mount] = [false, null]
+      // on the band isWorking has just turned, but the engine won't repaint it
+      // on its own — nudge once so the band folds the moment the turn ends
+      $.ui.invalidate('ui.render')
     }
     return next(e)
   })
@@ -149,6 +182,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
     if (e.surface !== 'terminal') return official
+    // the word tells Clawd what to act out in either place
+    if (e.props.word) spin.word = e.props.word
+    if (spin.place !== 'spinner') return official
     // idle means idle, all of it: the submit's renders still behind the prompt
     // hooks, a reload's repaint, a resize, a freshly reloaded module with no
     // history — the row stays the engine's own (the official ✻ stands in).
@@ -158,7 +194,6 @@ export const register: Register = on => {
       log($, 'render idle-pass (no turn started)')
       return official
     }
-    if (e.props.word) spin.word = e.props.word
     log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (columns < 50) return official
@@ -173,6 +208,34 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
         {official}
+      </Box>
+    )
+  })
+
+  // The band above the prompt: a row the engine never takes away for text, so
+  // Clawd plays here through thinking, tools and streaming alike. Its props
+  // carry the whole lifecycle — isWorking turns with the turn, bodyColumns
+  // sizes the stage, and the row wears the engine's own [-] fold. No state of
+  // ours to keep: the clock's paint() blits into the mount below.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (spin.place !== 'band') return next(e)
+    if (e.surface !== 'terminal' || e.props.hasSurvey || !e.props.isWorking) {
+      spin.mount = null  // the band is folded away: nothing mounted to repaint
+      return next(e)
+    }
+    const columns = (e.props.bodyColumns ?? 0) - EDGE
+    if (columns < 50) return next(e)
+    const now = Date.now()
+    if (!spin.turnAt) spin.turnAt = now  // a reload mid-turn, before its first render
+    const { Raster, Box } = $.ui.resolve(e)
+    if (spin.mount?.requestId !== e.requestId) spin.blit = true
+    spin.mount = { requestId: e.requestId, columns }
+    log($, `band take req=${String(e.requestId).slice(-4)} cols=${columns}`)
+    const cells = encode(frame(moment(now), columns))
+    spin.last = cells
+    return (
+      <Box>
+        <Raster key="act" columns={columns} rows={A.ROWS} cells={cells} />
       </Box>
     )
   })
