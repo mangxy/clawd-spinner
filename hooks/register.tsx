@@ -20,27 +20,6 @@ let myGen = 0  // the gen this module loaded under; a heartbeat reading another 
 const EDGE = 4  // columns kept clear at the right edge
 const LINE_MS = 10_000  // Clawd's line moves on to the word's next one every 10 seconds
 
-// a file per module load: the generations a reload leaves behind all append to
-// one file otherwise, and their read-then-write flushes overwrite each other's
-// lines — the newest generation's evidence eaten before it is ever seen
-const LOG = `/tmp/clawd-probe.${String(Date.now()).slice(-6)}.log`
-let buf = ''
-let lastFlush = 0
-function log($: EngineInterface, s: string) {
-  buf += `${Date.now()} ${s}\n`
-  const now = Date.now()
-  if (now - lastFlush < 1000 && buf.length < 8192) return
-  lastFlush = now
-  const out = buf
-  buf = ''
-  void (async () => {
-    try {
-      const prev = await $.fs.read(LOG).catch(() => '')
-      await $.fs.write(LOG, prev + out)
-    } catch { /* probe best effort */ }
-  })()
-}
-
 const spin = {
   // where Clawd acts out: the band above the prompt (default — the engine never
   // takes that row away, and it carries its own [-] fold) or the spinner row
@@ -86,8 +65,9 @@ async function paint($: EngineInterface) {
   const p = spin.pending
   if (p) {
     spin.pending = null
-    await update($, act, s => ({ ...s, word: p.word, turnAt: p.at })).catch(
-      e => log($, `update-throw ${String(e)}`))
+    // a failed commit self-heals: the render hands the word over again, the
+    // word still differing from the state's
+    await update($, act, s => ({ ...s, word: p.word, turnAt: p.at })).catch(() => {})
     spin.last = ''
   }
   const m = spin.mount
@@ -98,35 +78,24 @@ async function paint($: EngineInterface) {
   if (++heartbeats % 30 === 0) {
     const a = await read($, act)
     if (a.gen !== myGen) {
-      log($, 'paint gen-mismatch, heartbeat retiring')
       timer?.cancel()
       return
     }
   }
-  if (!spin.blit && Date.now() - spin.denyAt > 2000) {
-    spin.blit = true
-    log($, 'paint blit-retry-after-deny')
-  }
+  if (!spin.blit && Date.now() - spin.denyAt > 2000) spin.blit = true
   const a = await read($, act)
   const cells = cellsFor(a, m.columns, Date.now())
-  if (cells === spin.last) {
-    log($, 'paint same-cells skip')
-    return
-  }
+  if (cells === spin.last) return
   spin.last = cells
   if (!spin.blit) {
-    log($, 'paint invalidate-path (blit off)')
     $.ui.invalidate('ui.render')
     return
   }
   const r = await $.ui.blit({ requestId: m.requestId, key: 'act', cells })
   if ('deny' in r && r.deny) {
-    log($, 'paint BLIT-DENY')
     spin.blit = false
     spin.denyAt = Date.now()
     $.ui.invalidate('ui.render')
-  } else {
-    log($, 'paint blit-ok')
   }
 }
 
@@ -154,7 +123,6 @@ export const register: Register = (on, options) => {
     } catch { /* a fresh session: nothing to pick up */ }
     await $.command.register({ name: 'clawd-talk', description: "Turn Clawd's speech bubble on the spinner off or on" })
     await $.command.register({ name: 'clawd-word', description: 'Act out a word of your choosing — no more waiting on the spinner to roll it (no arg: back to the real words)' })
-    log($, 'session.start')
     timer?.cancel()  // a hot reload's leftover from this module's last load, if any
     timer = $.clock.every(FRAME_MS, () => void paint($))
     return next(e)
@@ -177,12 +145,7 @@ export const register: Register = (on, options) => {
       yield* next(e)
       return
     }
-    let lastKind = ''
     for await (const chunk of next(e)) {
-      if (chunk.kind !== lastKind) {
-        lastKind = chunk.kind
-        log($, `step kind=${chunk.kind}`)
-      }
       // every API request's stream ends in a stop chunk, but stopReason tells
       // the two apart: tool_use pauses mean more work is coming (the act keeps
       // running through them), end_turn is the loop's exit — fold right there,
@@ -190,9 +153,7 @@ export const register: Register = (on, options) => {
       // On the band the engine's own isWorking folds it; this is the spinner
       // row's exit only
       if (chunk.kind === 'stop') {
-        log($, `stop reason=${chunk.stopReason}`)
         if (chunk.stopReason === 'end_turn' && spin.place === 'spinner') {
-          log($, 'end_turn → fold')
           ;[spin.working, spin.mount] = [false, null]
         }
       }
@@ -212,7 +173,6 @@ export const register: Register = (on, options) => {
 
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
-      log($, `turn.start (mount was ${spin.mount ? 'set' : 'null'})`)
       // the act starts with the turn, not the submit: between them the prompt
       // hooks (memory recall & co.) may hold the UI frozen — Clawd mounted
       // there would stand petrified the whole wait. The official spinner row
@@ -233,7 +193,6 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', ($, e, next) => {
     if (!e.agentId) {
-      log($, 'turn.complete')
       // a blit outlives the fold in the engine's tree: a redraw it does on its
       // own — a command turn's busy band opening for a blink, /reload-plugins
       // among them — replays the last cells it holds, and Clawd flashes on a
@@ -241,7 +200,7 @@ export const register: Register = (on, options) => {
       // what replays is an empty stage
       if (spin.mount) {
         void $.ui.blit({ requestId: spin.mount.requestId, key: 'act', cells: blankCells(spin.mount.columns) })
-          .catch(e => log($, `blank-blit-throw ${String(e)}`))
+          .catch(() => {})
       }
       // fold the act away for good — no mid-turn stop revival past this point
       ;[spin.working, spin.mount] = [false, null]
@@ -254,24 +213,19 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     const official = await next(e)
-    // logged before the surface check: the band mode needs this hook only as
-    // the word's way in, and a non-terminal render is still that signal's
-    // chance to arrive — its evidence belongs in the log either way
-    log($, `spinner-fire surface=${e.surface} word=${String(e.props.word ?? '')}`)
     if (e.surface !== 'terminal') return official
     // the word tells Clawd what to act out in either place. A new word opens
     // its scene from its first frame; the same word is the same act, kept on.
     // The catch: a read on a freshly started host can throw before the value
     // exists — an unguarded one kills this hook outright and the word never
     // reaches Clawd again, the band left holding a blank stage
-    let word = e.props.word as string
+    const word = e.props.word as string
     let cur: ActState
     try {
       cur = await read($, act)
     } catch {
       cur = { word: '', turnAt: 0, force: null, gen: 0 }
     }
-    log($, `spinner-feed word=${word || '(none)'} cur=${cur.word || '(none)'} force=${String(cur.force)}`)
     if (word && !cur.force && word !== cur.word) {
       // no write here: the engine refuses state writes from inside a render.
       // The note is plain memory; the heartbeat's paint() commits it off the
@@ -284,11 +238,7 @@ export const register: Register = (on, options) => {
     // history — the row stays the engine's own (the official ✻ stands in).
     // Clawd opens only once turn.start has fired: the model request is really
     // leaving, the freeze is over, the act runs its whole length live
-    if (!spin.working) {
-      log($, 'render idle-pass (no turn started)')
-      return official
-    }
-    log($, `render req=${String(e.requestId).slice(-4)} word=${String(e.props.word)} mount=${spin.mount ? 1 : 0}`)
+    if (!spin.working) return official
     const columns = (e.viewport?.columns ?? 0) - EDGE
     if (columns < 50) return official
     const { Raster, Box } = $.ui.resolve(e)
@@ -327,7 +277,6 @@ export const register: Register = (on, options) => {
     spin.mount = { requestId: e.requestId, columns }
     const a = await read($, act)
     const cells = cellsFor(a, columns, Date.now())
-    log($, `band take req=${String(e.requestId).slice(-4)} cols=${columns} word=${a.word || '(none)'}`)
     spin.last = cells
     return (
       <Box>
