@@ -8,6 +8,7 @@ import { lineFor } from './rocky'
 
 const FRAME_MS = 83  // ~12 frames a second
 
+
 // The act's continuity, kept by the host: a plugin reload starts the module
 // over — its heartbeat keeps beating, the engine has no unload event to stop
 // it — so several generations of the module end up painting at once, each from
@@ -29,6 +30,7 @@ const spin = {
   talk: true,
   last: '', blit: true, denyAt: 0, working: false,
   mount: null as { requestId: string; columns: number } | null,
+  invAt: 0,  // last invalidate's moment, for the throttled deny nudge
   // the word a render handed over, waiting for the heartbeat to write: the
   // engine refuses a state write from inside a render (a write redraws, a
   // redraw writes — the loop it guards against), so the Spinner hook only
@@ -76,26 +78,42 @@ async function paint($: EngineInterface) {
   // Its mounts are stale anyway — its blits fall to deny and it would only
   // churn invalidate for as long as it ran
   if (++heartbeats % 30 === 0) {
-    const a = await read($, act)
-    if (a.gen !== myGen) {
+    const a = await read($, act).catch(() => null)
+    // only a NEWER generation retires us: /clear wipes the store and gen falls
+    // back to its default 0 — a wipe is not a replacement, the heart keeps beating
+    if (a && a.gen > myGen) {
       timer?.cancel()
       return
     }
   }
-  if (!spin.blit && Date.now() - spin.denyAt > 2000) spin.blit = true
-  const a = await read($, act)
+  if (!spin.blit && Date.now() - spin.denyAt > 2000) {
+    spin.blit = true
+  }
+  const a = await read($, act).catch(() => null)
+  if (!a) return  // the store is not ready (a fresh or resumed host): next beat retries
   const cells = cellsFor(a, m.columns, Date.now())
   if (cells === spin.last) return
   spin.last = cells
   if (!spin.blit) {
-    $.ui.invalidate('ui.render')
+    // the deny's wakeup nudge, throttled: the engine folds an invalidate rate
+    // past ten a second, and a deny-loop beating at the frame rate spends the
+    // whole budget on nudges that redraw nothing — then the rate limit eats
+    // the nudge that mattered, and a finished turn's screen freezes through
+    // the Stop hooks' long tail
+    if (Date.now() - spin.invAt > 250) {
+      spin.invAt = Date.now()
+      $.ui.invalidate('ui.render')
+    }
     return
   }
   const r = await $.ui.blit({ requestId: m.requestId, key: 'act', cells })
   if ('deny' in r && r.deny) {
     spin.blit = false
     spin.denyAt = Date.now()
-    $.ui.invalidate('ui.render')
+    if (Date.now() - spin.invAt > 250) {
+      spin.invAt = Date.now()
+      $.ui.invalidate('ui.render')
+    }
   }
 }
 
@@ -150,11 +168,18 @@ export const register: Register = (on, options) => {
       // the two apart: tool_use pauses mean more work is coming (the act keeps
       // running through them), end_turn is the loop's exit — fold right there,
       // before the engine's tail redraws, so no takeover frame flashes.
-      // On the band the engine's own isWorking folds it; this is the spinner
-      // row's exit only
+      // The band folds with the engine's isWorking, but that stays up through
+      // the Stop hooks' long tail (a session capture can hold it twenty
+      // seconds past the last token): Clawd is done the moment the stream is,
+      // whichever place he acts in
       if (chunk.kind === 'stop') {
-        if (chunk.stopReason === 'end_turn' && spin.place === 'spinner') {
+        if (chunk.stopReason === 'end_turn') {
+          if (spin.mount) {
+            void $.ui.blit({ requestId: spin.mount.requestId, key: 'act', cells: blankCells(spin.mount.columns) })
+              .catch(() => {})
+          }
           ;[spin.working, spin.mount] = [false, null]
+          $.ui.invalidate('ui.render')
         }
       }
       yield chunk
@@ -173,6 +198,9 @@ export const register: Register = (on, options) => {
 
   on('turn.start', ($, e, next) => {
     if (!e.agentId) {
+      // a resumed window never fires session.start, so its timer was never
+      // built and the band sits silent — the first turn starts the heart
+      if (!timer) timer = $.clock.every(FRAME_MS, () => void paint($))
       // the act starts with the turn, not the submit: between them the prompt
       // hooks (memory recall & co.) may hold the UI frozen — Clawd mounted
       // there would stand petrified the whole wait. The official spinner row
@@ -271,9 +299,12 @@ export const register: Register = (on, options) => {
       return next(e)
     }
     const columns = (e.props.bodyColumns ?? 0) - EDGE
-    if (columns < 50) return next(e)
+    if (columns < 50) {
+      return next(e)
+    }
     const { Raster, Box } = $.ui.resolve(e)
-    if (spin.mount?.requestId !== e.requestId) spin.blit = true
+    const swapped = spin.mount?.requestId !== e.requestId
+    if (swapped) spin.blit = true
     spin.mount = { requestId: e.requestId, columns }
     const a = await read($, act)
     const cells = cellsFor(a, columns, Date.now())
